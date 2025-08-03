@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BitBit - 암호화폐 거래 플랫폼 관리</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 홈페이지 -->
+        <div id="home-page" class="page active">
+            <div class="container">
+                <div class="welcome-card">
+                    <h1>BitBit에 오신 것을 환영합니다!</h1>
+                    <p>암호화폐 거래 플랫폼 관리 시스템</p>
+                    <div class="button-group">
+                        <button onclick="showPage('login')" class="btn btn-primary">로그인</button>
+                        <button onclick="showPage('register')" class="btn btn-secondary">회원가입</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 로그인 페이지 -->
+        <div id="login-page" class="page">
+            <div class="container">
+                <div class="login-card">
+                    <h2>로그인</h2>
+                    <form id="loginForm" onsubmit="handleLogin(event)">
+                        <div class="form-group">
+                            <label for="loginUserID">사용자 ID</label>
+                            <input type="text" id="loginUserID" name="userID" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="loginPassword">비밀번호</label>
+                            <input type="password" id="loginPassword" name="password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">로그인</button>
+                    </form>
+                    <p class="form-footer">
+                        계정이 없으신가요? <a href="#" onclick="showPage('register')">회원가입</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 회원가입 페이지 -->
+        <div id="register-page" class="page">
+            <div class="container">
+                <div class="register-card">
+                    <h2>회원가입</h2>
+                    <form id="registerForm" onsubmit="handleRegister(event)">
+                        <div class="form-group">
+                            <label for="registerUserID">사용자 ID</label>
+                            <input type="text" id="registerUserID" name="userID" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="registerPassword">비밀번호</label>
+                            <input type="password" id="registerPassword" name="password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword">비밀번호 확인</label>
+                            <input type="password" id="confirmPassword" name="confirmPassword" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">회원가입</button>
+                    </form>
+                    <p class="form-footer">
+                        이미 계정이 있으신가요? <a href="#" onclick="showPage('login')">로그인</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 대시보드 페이지 -->
+        <div id="dashboard-page" class="page">
+            <div class="dashboard-layout">
+                <!-- 사이드바 -->
+                <div class="sidebar">
+                    <div class="sidebar-header">
+                        <h2>BitBit</h2>
+                        <p>암호화폐 거래 관리</p>
+                    </div>
+                    <nav class="sidebar-nav">
+                        <ul>
+                            <li class="active"><a href="#" onclick="showDashboardTab('platforms')">거래소 Key 관리</a></li>
+                            <li><a href="#" onclick="showDashboardTab('trading')">예약 매도 관리</a></li>
+                            <li><a href="#" onclick="showDashboardTab('settings')">설정</a></li>
+                            <li><a href="#" onclick="showDashboardTab('system-log')">시스템 로그</a></li>
+                                            <li><a href="#" onclick="showDashboardTab('log-viewer-grid')">로그 뷰어 (그리드)</a></li>
+                        </ul>
+                    </nav>
+                    <div class="sidebar-footer">
+                        <button onclick="logout()" class="btn btn-secondary">로그아웃</button>
+                    </div>
+                </div>
+
+                <!-- 메인 콘텐츠 -->
+                <div class="main-content">
+                    <!-- 헤더 -->
+                    <header class="dashboard-header">
+                        <div class="header-left">
+                            <h1 id="dashboard-title">거래소 Key 관리</h1>
+                        </div>
+                        <div class="header-right">
+                            <div class="user-info">
+                                <span id="current-user">사용자</span>
+                                <div class="user-avatar">👤</div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <!-- 대시보드 콘텐츠 -->
+                    <div class="dashboard-content">
+                        <!-- 거래소 Key 관리 탭 -->
+                        <div id="platforms-tab" class="dashboard-tab active">
+                            <div class="content-card">
+                                <div class="card-header">
+                                    <h3>거래소 Key 관리</h3>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn btn-primary" onclick="showAddPlatformModal()">
+                                            <span class="btn-icon">+</span>
+                                            추가
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="platforms-content">
+                                    <p>플랫폼 정보를 불러오는 중...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 예약 매도 관리 탭 -->
+                        <div id="trading-tab" class="dashboard-tab">
+                            <div class="content-card">
+                                <div class="card-header">
+                                    <h3>예약 매도 관리</h3>
+                                    <button class="btn btn-primary" onclick="addSellOrder(event); return false;">
+                                        <span class="btn-icon">+</span>
+                                        예약 매도 추가
+                                    </button>
+                                </div>
+                                <div id="trading-content">
+                                    <div class="sell-order-list" id="sell-order-list-container">
+                                        <!-- 동적으로 예약 매도 목록이 생성됩니다 -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+                        <!-- 설정 탭 -->
+                        <div id="settings-tab" class="dashboard-tab">
+                            <div class="content-card">
+                                <h3>설정</h3>
+                                <div id="settings-content">
+                                    <p>설정을 불러오는 중...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 시스템 로그 탭 -->
+                        <div id="system-log-tab" class="dashboard-tab">
+                            <div class="content-card">
+                                <div class="card-header">
+                                    <h3>시스템 로그</h3>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn btn-secondary" onclick="clearDebugLog()">
+                                            로그 지우기
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <textarea id="debug-log" style="width: 100%; height: calc(100vh - 200px); font-family: monospace; font-size: 12px; background: #1e1e1e; color: #ffffff; border: 1px solid #333; padding: 15px; resize: none; overflow-y: auto;" readonly></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                                <!-- 로그 뷰어 (그리드 레이아웃) -->
+                        <div id="log-viewer-grid-tab" class="dashboard-tab">
+                            <div class="content-card">
+                                <div class="card-header">
+                                    <h3>로그 뷰어 (그리드 레이아웃)</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="log-grid" id="log-grid-container">
+                                        <!-- 동적으로 로그 패널이 생성됩니다 -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 플랫폼 추가/수정 모달 -->
+    <div id="platform-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">플랫폼 추가</h3>
+                <button class="modal-close" onclick="closePlatformModal()">&times;</button>
+            </div>
+            <form id="platform-form" onsubmit="handlePlatformSubmit(event)">
+                <div class="form-group">
+                    <label for="platformSelect">거래소</label>
+                    <select id="platformSelect" name="platformName" required>
+                        <option value="">거래소를 선택하세요</option>
+                        <option value="upbit">Upbit</option>
+                        <option value="bithumb">Bithumb</option>
+                        <option value="coinone">Coinone</option>
+                        <option value="korbit">Korbit</option>
+                        <option value="binance">Binance</option>
+                        <option value="bybit">Bybit</option>
+                        <option value="bitget">Bitget</option>
+                        <option value="huobi">Huobi</option>
+                        <option value="mexc">Mexc</option>
+                        <option value="kucoin">KuCoin</option>
+                        <option value="coinbase">Coinbase</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="platformName">별칭</label>
+                    <input type="text" id="platformName" name="name" placeholder="예: 테스트용, 메인계정" required>
+                </div>
+                <div class="form-group">
+                    <label for="accessKey">Access Key</label>
+                    <input type="text" id="accessKey" name="accessKey" placeholder="Access Key를 입력하세요" required>
+                </div>
+                <div class="form-group">
+                    <label for="secretKey">Secret Key</label>
+                    <input type="password" id="secretKey" name="secretKey" placeholder="Secret Key를 입력하세요" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closePlatformModal()">취소</button>
+                    <button type="submit" class="btn btn-primary" id="platform-submit-btn">추가</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 예약 매도 추가 모달 -->
+    <div id="sell-order-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="sell-order-modal-title">예약 매도 추가</h3>
+                <button class="modal-close" onclick="closeSellOrderModal()">&times;</button>
+            </div>
+            <form id="sell-order-form" onsubmit="handleSellOrderSubmit(event)">
+                <div class="form-group">
+                    <label for="platformKey">사용할 API Key</label>
+                    <select name="platformKey" id="platformKey-select" required>
+                        <option value="">API Key를 선택하세요</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="orderName">매도 주문 별칭</label>
+                    <input type="text" name="orderName" placeholder="매도 주문 별칭을 입력하세요" required>
+                </div>
+                <div class="form-group">
+                    <label for="symbol">심볼</label>
+                    <input type="text" name="symbol" placeholder="예: BTC/KRW, BTC/USDT" required>
+                </div>
+                <div class="form-group">
+                    <label for="price">목표가</label>
+                    <input type="number" name="price" step="0.01" placeholder="목표가를 입력하세요" required>
+                </div>
+                <div class="form-group">
+                    <label for="quantity">수량</label>
+                    <input type="number" name="quantity" step="0.0001" placeholder="수량을 입력하세요" required>
+                </div>
+                <div class="form-group">
+                    <label for="term">주기 (초)</label>
+                    <input type="number" name="term" step="0.01" placeholder="주기를 초 단위로 입력하세요" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeSellOrderModal()">취소</button>
+                    <button type="submit" class="btn btn-primary" id="sell-order-submit-btn">추가</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 로그 모달 -->
+    <div id="log-modal" class="modal">
+        <div class="modal-content log-modal-content">
+            <div class="modal-header">
+                <h3 id="log-modal-title">예약 매도 로그</h3>
+                <button class="modal-close" onclick="closeLogModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="log-content" class="log-display">
+                    <!-- 로그 내용이 여기에 표시됩니다 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

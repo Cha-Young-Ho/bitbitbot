@@ -1,0 +1,191 @@
+package local_file
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+type Handler struct {
+	filePath string
+	data     []UserData
+}
+
+type UserData struct {
+	ID              string        `json:"id"`
+	Password        string        `json:"password"`
+	PlatformKeyList []PlatformKey `json:"platformKeyList"`
+	SellOrderList   []SellOrder   `json:"sellOrderList"`
+}
+
+type SellOrder struct {
+	Name             string  `json:"name"`
+	Symbol           string  `json:"symbol"`
+	Price            float64 `json:"price"`
+	Quantity         float64 `json:"quantity"`
+	Term             float64 `json:"term"`
+	Platform         string  `json:"platform"`
+	PlatformNickName string  `json:"platformNickName"`
+}
+
+type PlatformKey struct {
+	PlatformName      string `json:"platformName"`
+	Name              string `json:"name"`
+	PlatformAccessKey string `json:"platformAccessKey"`
+	PlatformSecretKey string `json:"platformSecretKey"`
+}
+
+func NewHandler() *Handler {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("홈 디렉터리를 찾을 수 없습니다: %v", err)
+		return nil
+	}
+
+	directoryPath := filepath.Join(homeDir, "bit_info")
+	filePath := filepath.Join(directoryPath, "bitbit_data.json")
+
+	handler := &Handler{
+		filePath: filePath,
+		data:     []UserData{},
+	}
+
+	// 초기 데이터 로드
+	if err := handler.loadData(); err != nil {
+		log.Printf("데이터 로드 실패: %v", err)
+	}
+
+	return handler
+}
+
+// loadData 로컬 파일에서 데이터를 로드합니다
+func (h *Handler) loadData() error {
+	// 디렉터리 생성
+	directoryPath := filepath.Dir(h.filePath)
+	if err := os.MkdirAll(directoryPath, 0755); err != nil {
+		return fmt.Errorf("디렉터리 생성 실패: %w", err)
+	}
+
+	// 파일 존재 여부 확인
+	fileInfo, err := os.Stat(h.filePath)
+	if os.IsNotExist(err) {
+		// 파일이 없으면 빈 데이터로 시작
+		h.data = []UserData{}
+		return nil
+	}
+
+	// 파일 크기 확인 (빈 파일 처리)
+	if fileInfo.Size() == 0 {
+		h.data = []UserData{}
+		return nil
+	}
+
+	// 파일 읽기
+	data, err := os.ReadFile(h.filePath)
+	if err != nil {
+		return fmt.Errorf("파일 읽기 실패: %w", err)
+	}
+
+	// 빈 문자열이나 공백만 있는 경우 처리
+	trimmedData := strings.TrimSpace(string(data))
+	if trimmedData == "" {
+		h.data = []UserData{}
+		return nil
+	}
+
+	// JSON 파싱
+	if err := json.Unmarshal([]byte(trimmedData), &h.data); err != nil {
+		// JSON 파싱 실패 시 빈 데이터로 초기화
+		log.Printf("JSON 파싱 실패: %v", err)
+		h.data = []UserData{}
+		return nil
+	}
+	return nil
+}
+
+// saveData 데이터를 로컬 파일에 저장합니다
+func (h *Handler) saveData() error {
+	// JSON으로 변환
+	jsonData, err := json.MarshalIndent(h.data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("JSON 변환 실패: %w", err)
+	}
+
+	// 파일에 저장
+	if err := os.WriteFile(h.filePath, jsonData, 0644); err != nil {
+		return fmt.Errorf("파일 저장 실패: %w", err)
+	}
+
+	return nil
+}
+
+// GetUserByID 사용자 ID로 사용자 데이터를 조회합니다
+func (h *Handler) GetUserByID(userID string) (*UserData, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("사용자 ID가 비어있습니다")
+	}
+
+	for _, user := range h.data {
+		if user.ID == userID {
+			return &user, nil
+		}
+	}
+	return nil, fmt.Errorf("사용자를 찾을 수 없습니다: %s", userID)
+}
+
+// AddUser 새로운 사용자를 추가합니다
+func (h *Handler) AddUser(userData UserData) error {
+	// 입력값 검증
+	if userData.ID == "" {
+		return fmt.Errorf("사용자 ID가 비어있습니다")
+	}
+	if userData.Password == "" {
+		return fmt.Errorf("비밀번호가 비어있습니다")
+	}
+
+	// 기존 사용자 확인
+	for _, existingUser := range h.data {
+		if existingUser.ID == userData.ID {
+			return fmt.Errorf("이미 존재하는 사용자 ID입니다: %s", userData.ID)
+		}
+	}
+
+	// 새 사용자 추가
+	h.data = append(h.data, userData)
+
+	// 파일에 저장
+	return h.saveData()
+}
+
+// UpdateUser 사용자 데이터를 업데이트합니다
+func (h *Handler) UpdateUser(userData UserData) error {
+	if userData.ID == "" {
+		return fmt.Errorf("사용자 ID가 비어있습니다")
+	}
+
+	for i, existingUser := range h.data {
+		if existingUser.ID == userData.ID {
+			h.data[i] = userData
+			return h.saveData()
+		}
+	}
+	return fmt.Errorf("사용자를 찾을 수 없습니다: %s", userData.ID)
+}
+
+// GetAllUsers 모든 사용자 데이터를 반환합니다
+func (h *Handler) GetAllUsers() []UserData {
+	return h.data
+}
+
+// GetUserCount 사용자 수를 반환합니다
+func (h *Handler) GetUserCount() int {
+	return len(h.data)
+}
+
+// ReloadData 데이터를 다시 로드합니다
+func (h *Handler) ReloadData() error {
+	return h.loadData()
+}
