@@ -410,6 +410,8 @@ function showDashboardTab(tabName: string): void {
                 const userID = localStorage.getItem('userID');
                 if (userID) {
                     loadSellOrders(userID);
+                    // 웹소켓 연결 시작
+                    startWebSocketConnection(userID);
                 }
             }
 }
@@ -745,6 +747,58 @@ async function callGetSellOrders(userID: string): Promise<any> {
     }
 }
 
+// 워커 로그 스트리밍 API 호출
+async function callGetWorkerLogsStream(userID: string): Promise<any> {
+    try {
+        const { GetWorkerLogsStream } = await import('../wailsjs/go/main/App');
+        const result = await GetWorkerLogsStream(userID);
+        return result;
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
+        console.error('GetWorkerLogsStream error:', error);
+        return { success: false, message: `워커 로그 스트리밍 중 오류가 발생했습니다: ${errorMessage}` };
+    }
+}
+
+// 특정 주문의 로그 조회 API 호출
+async function callGetOrderLogs(userID: string, orderName: string): Promise<any> {
+    try {
+        const { GetOrderLogs } = await import('../wailsjs/go/main/App');
+        const result = await GetOrderLogs(userID, orderName);
+        return result;
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
+        console.error('GetOrderLogs error:', error);
+        return { success: false, message: `주문 로그 조회 중 오류가 발생했습니다: ${errorMessage}` };
+    }
+}
+
+// 로그 구독 API 호출
+async function callSubscribeToLogs(userID: string): Promise<any> {
+    try {
+        const { SubscribeToLogs } = await import('../wailsjs/go/main/App');
+        const result = await SubscribeToLogs(userID);
+        return result;
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
+        console.error('SubscribeToLogs error:', error);
+        return { success: false, message: `로그 구독 중 오류가 발생했습니다: ${errorMessage}` };
+    }
+}
+
+// 통합된 로그 조회 API 호출
+async function callGetUnifiedLogs(userID: string): Promise<any> {
+    try {
+        const { GetUnifiedLogs } = await import('../wailsjs/go/main/App');
+        const result = await GetUnifiedLogs(userID);
+        return result;
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
+        console.error('GetUnifiedLogs error:', error);
+        return { success: false, message: `통합 로그 조회 중 오류가 발생했습니다: ${errorMessage}` };
+    }
+}
+
 // 예약 매도 목록 렌더링
 function renderSellOrders(): void {
     const container = document.getElementById('sell-order-list-container');
@@ -761,6 +815,249 @@ function renderSellOrders(): void {
         const orderElement = createSellOrderElement(order);
         container.appendChild(orderElement);
     });
+}
+
+// 실시간 로그 업데이트 시작
+let logUpdateInterval: NodeJS.Timeout | null = null;
+
+function startRealTimeLogUpdates(): void {
+    const userID = localStorage.getItem('userID');
+    if (!userID) return;
+    
+    // 기존 인터벌이 있으면 제거
+    if (logUpdateInterval) {
+        clearInterval(logUpdateInterval);
+    }
+    
+    console.log('실시간 로그 업데이트 시작');
+    
+    // 5초마다 로그 업데이트
+    logUpdateInterval = setInterval(async () => {
+        console.log('로그 업데이트 실행');
+        await updateAllOrderLogs(userID);
+    }, 5000);
+}
+
+// 모든 주문의 로그 업데이트
+async function updateAllOrderLogs(userID: string): Promise<void> {
+    for (const order of sellOrders) {
+        await updateOrderLogs(userID, order.id);
+    }
+}
+
+// 웹소켓 연결을 위한 변수들
+let wsConnection: WebSocket | null = null;
+let isConnected = false;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
+
+// 웹소켓 연결 시작
+async function startWebSocketConnection(userID: string): Promise<void> {
+    try {
+        console.log('웹소켓 연결 시작:', userID);
+        
+        // 웹소켓 연결 생성
+        const wsUrl = `ws://localhost:8080/ws?userId=${encodeURIComponent(userID)}`;
+        wsConnection = new WebSocket(wsUrl);
+        
+        wsConnection.onopen = () => {
+            console.log('웹소켓 연결 성공');
+            isConnected = true;
+            reconnectAttempts = 0;
+        };
+        
+        wsConnection.onmessage = (event) => {
+            try {
+                const log = JSON.parse(event.data);
+                console.log('웹소켓 로그 수신:', log);
+                processUnifiedLog(log);
+            } catch (error) {
+                console.error('웹소켓 메시지 파싱 실패:', error);
+            }
+        };
+        
+        wsConnection.onclose = () => {
+            console.log('웹소켓 연결 종료');
+            isConnected = false;
+            
+            // 재연결 시도
+            if (reconnectAttempts < maxReconnectAttempts) {
+                reconnectAttempts++;
+                console.log(`웹소켓 재연결 시도 ${reconnectAttempts}/${maxReconnectAttempts}`);
+                setTimeout(() => {
+                    startWebSocketConnection(userID);
+                }, 5000);
+            }
+        };
+        
+        wsConnection.onerror = (error) => {
+            console.error('웹소켓 연결 오류:', error);
+        };
+        
+    } catch (error) {
+        console.error('웹소켓 연결 실패:', error);
+    }
+}
+
+// 웹소켓 연결 종료
+function stopWebSocketConnection(): void {
+    if (wsConnection) {
+        wsConnection.close();
+        wsConnection = null;
+    }
+    isConnected = false;
+}
+
+// 통합된 로그 처리 (배열)
+function processUnifiedLogs(logs: any[]): void {
+    logs.forEach(log => {
+        processUnifiedLog(log);
+    });
+}
+
+// 통합된 로그 처리 (단일)
+function processUnifiedLog(log: any): void {
+    // 플랫폼과 별칭으로 해당 주문 찾기
+    const order = sellOrders.find(o => 
+        o.platform.toLowerCase() === log.platform.toLowerCase() && 
+        o.platformNickName === log.nickname
+    );
+    
+    if (order) {
+        // 해당 주문의 로그 컨테이너에 로그 추가
+        addLogToOrder(order.id, log);
+    }
+}
+
+// 주문에 로그 추가
+function addLogToOrder(orderName: string, log: any): void {
+    const logContainer = document.getElementById(`${orderName}-logs`);
+    if (!logContainer) return;
+    
+    const logEntry = document.createElement('div');
+    logEntry.className = `log-entry ${log.logType || 'info'}`;
+    
+    const timestamp = new Date(log.timestamp).toLocaleTimeString();
+    const message = log.message;
+    
+    logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+    logContainer.appendChild(logEntry);
+    
+    // 자동 스크롤
+    logContainer.scrollTop = logContainer.scrollHeight;
+    
+    // 최대 20개 로그만 유지
+    const logEntries = logContainer.querySelectorAll('.log-entry');
+    if (logEntries.length > 20) {
+        logEntries[0].remove();
+    }
+}
+
+// 특정 주문의 로그 업데이트
+async function updateOrderLogs(userID: string, orderName: string): Promise<void> {
+    try {
+        console.log('로그 업데이트 시작:', userID, orderName);
+        const result = await callGetOrderLogs(userID, orderName);
+        console.log('로그 업데이트 결과:', result);
+        if (result.success && result.logs) {
+            console.log('로그 업데이트 표시:', result.logs.length, '개');
+            displayOrderLogs(orderName, result.logs);
+        } else {
+            console.log('로그 업데이트 없음:', result);
+        }
+    } catch (error) {
+        console.error('로그 업데이트 실패:', error);
+    }
+}
+
+// 주문 로그 로드
+async function loadOrderLogs(userID: string, orderName: string): Promise<void> {
+    try {
+        console.log('로그 로드 시작:', userID, orderName);
+        const result = await callGetOrderLogs(userID, orderName);
+        console.log('로그 로드 결과:', result);
+        if (result.success && result.logs) {
+            console.log('로그 표시 시작:', result.logs.length, '개');
+            displayOrderLogs(orderName, result.logs);
+        } else {
+            console.log('로그 없음 또는 실패:', result);
+        }
+    } catch (error) {
+        console.error('로그 로드 실패:', error);
+    }
+}
+
+// 주문 로그 표시
+function displayOrderLogs(orderName: string, logs: any[]): void {
+    const logContainer = document.getElementById(`${orderName}-logs`);
+    if (!logContainer) {
+        console.log('로그 컨테이너를 찾을 수 없습니다:', orderName);
+        return;
+    }
+    
+    console.log('로그 표시 시작:', orderName, logs.length, '개');
+    
+    // 기존 로그 제거
+    logContainer.innerHTML = '';
+    
+    // 최근 10개 로그만 표시
+    const recentLogs = logs.slice(-10);
+    
+    recentLogs.forEach((log, index) => {
+        const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
+        
+        const timestamp = new Date(log.timestamp).toLocaleTimeString();
+        const message = log.message;
+        
+        logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+        logContainer.appendChild(logEntry);
+        
+        console.log(`로그 ${index + 1}: [${timestamp}] ${message}`);
+    });
+    
+    // 자동 스크롤
+    logContainer.scrollTop = logContainer.scrollHeight;
+    
+    console.log('로그 표시 완료:', orderName);
+}
+
+// 모달 로그 로드
+async function loadModalLogs(userID: string, orderName: string): Promise<void> {
+    try {
+        const result = await callGetOrderLogs(userID, orderName);
+        if (result.success && result.logs) {
+            displayModalLogs(result.logs);
+        }
+    } catch (error) {
+        console.error('모달 로그 로드 실패:', error);
+    }
+}
+
+// 모달 로그 표시
+function displayModalLogs(logs: any[]): void {
+    const logContent = document.getElementById('log-content');
+    if (!logContent) return;
+    
+    // 기존 로그 제거
+    logContent.innerHTML = '';
+    
+    // 최근 20개 로그 표시
+    const recentLogs = logs.slice(-20);
+    
+    recentLogs.forEach(log => {
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry ${log.logType || 'info'}`;
+        
+        const timestamp = new Date(log.timestamp).toLocaleTimeString();
+        const message = log.message;
+        
+        logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+        logContent.appendChild(logEntry);
+    });
+    
+    // 자동 스크롤
+    logContent.scrollTop = logContent.scrollHeight;
 }
 
 // 예약 매도 요소 생성
@@ -873,22 +1170,11 @@ function createSellOrderElement(order: SellOrder): HTMLElement {
     logContent.className = 'log-content';
     logContent.id = `${order.id}-logs`;
     
-    // 샘플 로그 추가 (실제로는 동적으로 생성)
-    const sampleLogs = [
-        `[${new Date().toLocaleTimeString()}] 예약 매도 주문 생성`,
-        `[${new Date().toLocaleTimeString()}] ${order.platform} API 연결 확인`,
-        `[${new Date().toLocaleTimeString()}] ${order.symbol} 시장 데이터 조회`,
-        `[${new Date().toLocaleTimeString()}] 현재가: ${formatPrice(order.price, order.symbol)}`,
-        `[${new Date().toLocaleTimeString()}] 매도 조건 확인 중...`,
-        `[${new Date().toLocaleTimeString()}] 목표가 도달 대기 중`
-    ];
-    
-    sampleLogs.forEach(logText => {
-        const logEntry = document.createElement('div');
-        logEntry.className = 'log-entry';
-        logEntry.textContent = logText;
-        logContent.appendChild(logEntry);
-    });
+    // 초기 로그 로드
+    const userID = localStorage.getItem('userID');
+    if (userID) {
+        loadOrderLogs(userID, order.id);
+    }
     
     orderLogs.appendChild(logsTitle);
     orderLogs.appendChild(logContent);
@@ -934,23 +1220,11 @@ function viewInModal(orderId: string, event?: Event): void {
         if (logContent) {
             logContent.innerHTML = '';
             
-            // 샘플 로그 생성
-            const sampleLogs = [
-                { time: new Date().toLocaleTimeString(), message: '예약 매도 주문 생성', type: 'info' },
-                { time: new Date().toLocaleTimeString(), message: `${order.platform} API 연결 확인`, type: 'success' },
-                { time: new Date().toLocaleTimeString(), message: `${order.symbol} 시장 데이터 조회`, type: 'info' },
-                { time: new Date().toLocaleTimeString(), message: `현재가: ${formatPrice(order.price, order.symbol)}`, type: 'info' },
-                { time: new Date().toLocaleTimeString(), message: '매도 조건 확인 중...', type: 'warning' },
-                { time: new Date().toLocaleTimeString(), message: '목표가 도달 대기 중', type: 'info' },
-                { time: new Date().toLocaleTimeString(), message: '주문 상태: 활성화', type: 'success' }
-            ];
-            
-            sampleLogs.forEach(log => {
-                const logEntry = document.createElement('div');
-                logEntry.className = `log-entry ${log.type}`;
-                logEntry.innerHTML = `<span class="timestamp">[${log.time}]</span> ${log.message}`;
-                logContent.appendChild(logEntry);
-            });
+            // 실제 로그 로드
+            const userID = localStorage.getItem('userID');
+            if (userID) {
+                loadModalLogs(userID, orderId);
+            }
         }
         
         // 모달 표시
@@ -1038,6 +1312,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Logout function
 function logout(): void {
+    // 웹소켓 연결 종료
+    stopWebSocketConnection();
+    
     currentUser = null;
     localStorage.removeItem('userID');
     showPage('home');

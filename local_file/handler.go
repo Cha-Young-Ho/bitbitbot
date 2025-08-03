@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Handler struct {
@@ -22,13 +23,26 @@ type UserData struct {
 }
 
 type SellOrder struct {
-	Name             string  `json:"name"`
-	Symbol           string  `json:"symbol"`
-	Price            float64 `json:"price"`
-	Quantity         float64 `json:"quantity"`
-	Term             float64 `json:"term"`
-	Platform         string  `json:"platform"`
-	PlatformNickName string  `json:"platformNickName"`
+	Name             string     `json:"name"`
+	Symbol           string     `json:"symbol"`
+	Price            float64    `json:"price"`
+	Quantity         float64    `json:"quantity"`
+	Term             float64    `json:"term"`
+	Platform         string     `json:"platform"`
+	PlatformNickName string     `json:"platformNickName"`
+	Logs             []OrderLog `json:"logs,omitempty"`
+	LastUpdated      time.Time  `json:"lastUpdated,omitempty"`
+}
+
+type OrderLog struct {
+	Timestamp   time.Time `json:"timestamp"`
+	Message     string    `json:"message"`
+	LogType     string    `json:"logType"`
+	CheckCount  int       `json:"checkCount,omitempty"`
+	ErrorCount  int       `json:"errorCount,omitempty"`
+	LastPrice   float64   `json:"lastPrice,omitempty"`
+	TargetPrice float64   `json:"targetPrice,omitempty"`
+	OrderStatus string    `json:"orderStatus,omitempty"`
 }
 
 type PlatformKey struct {
@@ -188,4 +202,83 @@ func (h *Handler) GetUserCount() int {
 // ReloadData 데이터를 다시 로드합니다
 func (h *Handler) ReloadData() error {
 	return h.loadData()
+}
+
+// AddOrderLog 특정 사용자의 특정 주문에 로그를 추가합니다
+func (h *Handler) AddOrderLog(userID, orderName string, log OrderLog) error {
+	// 사용자 찾기
+	userIndex := -1
+	orderIndex := -1
+
+	for i, user := range h.data {
+		if user.ID == userID {
+			userIndex = i
+			// 주문 찾기
+			for j, order := range user.SellOrderList {
+				if order.Name == orderName {
+					orderIndex = j
+					break
+				}
+			}
+			break
+		}
+	}
+
+	if userIndex == -1 {
+		return fmt.Errorf("사용자를 찾을 수 없습니다: %s", userID)
+	}
+
+	if orderIndex == -1 {
+		return fmt.Errorf("주문을 찾을 수 없습니다: %s", orderName)
+	}
+
+	// 로그 추가
+	h.data[userIndex].SellOrderList[orderIndex].Logs = append(
+		h.data[userIndex].SellOrderList[orderIndex].Logs,
+		log,
+	)
+
+	// 최대 로그 개수 제한 (최근 100개만 유지)
+	if len(h.data[userIndex].SellOrderList[orderIndex].Logs) > 100 {
+		h.data[userIndex].SellOrderList[orderIndex].Logs =
+			h.data[userIndex].SellOrderList[orderIndex].Logs[len(h.data[userIndex].SellOrderList[orderIndex].Logs)-100:]
+	}
+
+	// 마지막 업데이트 시간 설정
+	h.data[userIndex].SellOrderList[orderIndex].LastUpdated = time.Now()
+
+	// 파일에 저장
+	return h.saveData()
+}
+
+// GetOrderLogs 특정 사용자의 특정 주문의 로그를 반환합니다
+func (h *Handler) GetOrderLogs(userID, orderName string) ([]OrderLog, error) {
+	for _, user := range h.data {
+		if user.ID == userID {
+			for _, order := range user.SellOrderList {
+				if order.Name == orderName {
+					return order.Logs, nil
+				}
+			}
+			return nil, fmt.Errorf("주문을 찾을 수 없습니다: %s", orderName)
+		}
+	}
+	return nil, fmt.Errorf("사용자를 찾을 수 없습니다: %s", userID)
+}
+
+// ClearOrderLogs 특정 사용자의 특정 주문의 로그를 초기화합니다
+func (h *Handler) ClearOrderLogs(userID, orderName string) error {
+	for i, user := range h.data {
+		if user.ID == userID {
+			for j, order := range user.SellOrderList {
+				if order.Name == orderName {
+					h.data[i].SellOrderList[j].Logs = []OrderLog{}
+					h.data[i].SellOrderList[j].LastUpdated = time.Now()
+					return h.saveData()
+				}
+			}
+			return fmt.Errorf("주문을 찾을 수 없습니다: %s", orderName)
+		}
+	}
+	return fmt.Errorf("사용자를 찾을 수 없습니다: %s", userID)
 }
