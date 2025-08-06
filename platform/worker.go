@@ -54,6 +54,7 @@ type WorkerManager struct {
 	mu             sync.RWMutex
 	logChan        chan WorkerLog
 	unifiedLogChan chan UnifiedLog // 통합된 로그 채널
+	systemLogChan  chan SystemLog  // 시스템 로그 채널
 	ctx            context.Context
 	cancel         context.CancelFunc
 	localHandler   *local_file.Handler        // 로컬 파일 핸들러
@@ -98,6 +99,17 @@ type UnifiedLog struct {
 	OrderStatus string    `json:"orderStatus"` // 주문 상태
 }
 
+type SystemLog struct {
+	Component string    `json:"component"` // 컴포넌트명 (예: "WorkerManager", "WebSocket", "Handler")
+	Function  string    `json:"function"`  // 함수명
+	Message   string    `json:"message"`   // 메시지
+	LogType   string    `json:"logType"`   // 로그 타입 ("info", "error", "warning")
+	Timestamp time.Time `json:"timestamp"` // 타임스탬프
+	UserID    string    `json:"userId"`    // 사용자 ID (선택적)
+	OrderName string    `json:"orderName"` // 주문명 (선택적)
+	Error     string    `json:"error"`     // 에러 메시지 (선택적)
+}
+
 // NewWorkerManager 새로운 워커 매니저를 생성합니다
 func NewWorkerManager() *WorkerManager {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -106,6 +118,7 @@ func NewWorkerManager() *WorkerManager {
 		workerInfo:     make(map[string]*WorkerInfo),
 		logChan:        make(chan WorkerLog, 1000),  // 버퍼 크기 1000
 		unifiedLogChan: make(chan UnifiedLog, 1000), // 통합된 로그 채널
+		systemLogChan:  make(chan SystemLog, 1000),  // 시스템 로그 채널
 		ctx:            ctx,
 		cancel:         cancel,
 		localHandler:   local_file.NewHandler(),
@@ -271,8 +284,35 @@ func (wm *WorkerManager) SendLog(workerLog WorkerLog) {
 	// 통합된 로그로 변환하여 전송
 	wm.sendUnifiedLog(workerLog)
 
-	// 로그를 로컬 파일에 저장
-	wm.saveLogToLocalFile(workerLog)
+	// 시스템 로그에도 워커 로그 전송
+	wm.SendSystemLog("Worker", "SendLog", workerLog.Message, workerLog.LogType, workerLog.UserID, workerLog.OrderName, "")
+
+	// 로컬 파일 저장 완전 비활성화 (메모리에서만 실시간 표시)
+}
+
+// SendSystemLog 시스템 로그를 전송합니다
+func (wm *WorkerManager) SendSystemLog(component, function, message, logType string, userID, orderName, errorMsg string) {
+	systemLog := SystemLog{
+		Component: component,
+		Function:  function,
+		Message:   message,
+		LogType:   logType,
+		Timestamp: time.Now(),
+		UserID:    userID,
+		OrderName: orderName,
+		Error:     errorMsg,
+	}
+
+	// 시스템 로그 채널로 전송
+	select {
+	case wm.systemLogChan <- systemLog:
+		log.Printf("시스템 로그 전송 성공: %s - %s", component, message)
+	default:
+		log.Printf("시스템 로그 채널이 가득 찼습니다: %s", message)
+	}
+
+	// 웹소켓 클라이언트들에게 전송
+	wm.broadcastSystemLog(systemLog)
 }
 
 // sendUnifiedLog 통합된 로그를 전송합니다
@@ -346,6 +386,24 @@ func (wm *WorkerManager) broadcastToClients(unifiedLog UnifiedLog) {
 			}
 			client.SendMessage(data)
 		}
+	}
+}
+
+// broadcastSystemLog 시스템 로그를 모든 클라이언트에게 브로드캐스트합니다
+func (wm *WorkerManager) broadcastSystemLog(systemLog SystemLog) {
+	// 웹소켓 클라이언트들에게 전송
+	wm.wsClientsMu.RLock()
+	defer wm.wsClientsMu.RUnlock()
+
+	for _, client := range wm.wsClients {
+		// 시스템 로그는 모든 사용자에게 전송
+		// SystemLog를 JSON으로 마샬링
+		data, err := json.Marshal(systemLog)
+		if err != nil {
+			log.Printf("시스템 로그 마샬링 실패: %v", err)
+			continue
+		}
+		client.SendMessage(data)
 	}
 }
 

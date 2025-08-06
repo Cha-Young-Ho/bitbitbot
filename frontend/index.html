@@ -88,9 +88,8 @@
                         <ul>
                             <li class="active"><a href="#" onclick="showDashboardTab('platforms')">거래소 Key 관리</a></li>
                             <li><a href="#" onclick="showDashboardTab('trading')">예약 매도 관리</a></li>
-                            <li><a href="#" onclick="showDashboardTab('settings')">설정</a></li>
+                            <li><a href="#" onclick="showDashboardTab('log-viewer-grid')">로그 뷰어</a></li>
                             <li><a href="#" onclick="showDashboardTab('system-log')">시스템 로그</a></li>
-                                            <li><a href="#" onclick="showDashboardTab('log-viewer-grid')">로그 뷰어 (그리드)</a></li>
                         </ul>
                     </nav>
                     <div class="sidebar-footer">
@@ -169,22 +168,27 @@
                                 <div class="card-header">
                                     <h3>시스템 로그</h3>
                                     <div style="display: flex; gap: 10px;">
-                                        <button class="btn btn-secondary" onclick="clearDebugLog()">
+                                        <button class="btn btn-secondary" onclick="clearSystemLog()">
                                             로그 지우기
                                         </button>
                                     </div>
                                 </div>
                                 <div class="card-body">
-                                    <textarea id="debug-log" style="width: 100%; height: calc(100vh - 200px); font-family: monospace; font-size: 12px; background: #1e1e1e; color: #ffffff; border: 1px solid #333; padding: 15px; resize: none; overflow-y: auto;" readonly></textarea>
+                                    <div id="system-log-container" style="width: 100%; height: calc(100vh - 200px); font-family: monospace; font-size: 12px; background: #1e1e1e; color: #ffffff; border: 1px solid #333; padding: 15px; overflow-y: auto;"></div>
                                 </div>
                             </div>
                         </div>
 
-                                <!-- 로그 뷰어 (그리드 레이아웃) -->
+                        <!-- 로그 뷰어 (그리드 레이아웃) -->
                         <div id="log-viewer-grid-tab" class="dashboard-tab">
                             <div class="content-card">
                                 <div class="card-header">
-                                    <h3>로그 뷰어 (그리드 레이아웃)</h3>
+                                    <h3>로그 뷰어</h3>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn btn-secondary" onclick="clearAllGridLogs()">
+                                            모든 로그 지우기
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="card-body">
                                     <div class="log-grid" id="log-grid-container">

@@ -917,19 +917,37 @@ function processUnifiedLogs(logs: any[]): void {
 
 // 통합된 로그 처리 (단일)
 function processUnifiedLog(log: any): void {
-    // 플랫폼과 별칭으로 해당 주문 찾기
-    const order = sellOrders.find(o => 
+    console.log('processUnifiedLog 호출:', log);
+    console.log('현재 sellOrders:', sellOrders);
+    
+    // OrderName으로 해당 주문 찾기
+    const order = sellOrders.find(o => o.id === log.orderName);
+    
+    // OrderName으로 찾지 못한 경우 플랫폼과 별칭으로 찾기 (백업)
+    const orderByPlatform = !order ? sellOrders.find(o => 
         o.platform.toLowerCase() === log.platform.toLowerCase() && 
         o.platformNickName === log.nickname
-    );
+    ) : null;
     
-    if (order) {
-        // 해당 주문의 로그 컨테이너에 로그 추가
-        addLogToOrder(order.id, log);
+    const targetOrder = order || orderByPlatform;
+    
+    console.log('찾은 주문:', targetOrder);
+    console.log('로그의 orderName:', log.orderName);
+    console.log('로그의 platform:', log.platform);
+    console.log('로그의 nickname:', log.nickname);
+    
+    if (targetOrder) {
+        // 해당 주문의 로그 컨테이너에 로그 추가 (예약 매도 관리)
+        addLogToOrder(targetOrder.id, log);
+        
+        // 그리드 로그 뷰어에도 로그 추가
+        addLogToGrid(targetOrder.id, log);
+    } else {
+        console.log('해당하는 주문을 찾을 수 없음:', log.orderName, log.platform, log.nickname);
     }
 }
 
-// 주문에 로그 추가
+// 주문에 로그 추가 (예약 매도 관리)
 function addLogToOrder(orderName: string, log: any): void {
     const logContainer = document.getElementById(`${orderName}-logs`);
     if (!logContainer) return;
@@ -949,6 +967,37 @@ function addLogToOrder(orderName: string, log: any): void {
     // 최대 20개 로그만 유지
     const logEntries = logContainer.querySelectorAll('.log-entry');
     if (logEntries.length > 20) {
+        logEntries[0].remove();
+    }
+}
+
+// 그리드에 로그 추가 (로그 뷰어)
+function addLogToGrid(orderName: string, log: any): void {
+    const gridLogContainer = document.getElementById(`${orderName}-grid-logs`);
+    if (!gridLogContainer) {
+        console.log('그리드 로그 컨테이너를 찾을 수 없음:', `${orderName}-grid-logs`);
+        return;
+    }
+    
+    console.log('그리드 로그 컨테이너 찾음:', gridLogContainer);
+    
+    const logEntry = document.createElement('div');
+    logEntry.className = `log-entry ${log.logType || 'info'}`;
+    
+    const timestamp = new Date(log.timestamp).toLocaleTimeString();
+    const message = log.message;
+    
+    logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+    gridLogContainer.appendChild(logEntry);
+    
+    console.log('그리드 로그 엔트리 추가됨:', logEntry.innerHTML);
+    
+    // 자동 스크롤
+    gridLogContainer.scrollTop = gridLogContainer.scrollHeight;
+    
+    // 최대 50개 로그만 유지
+    const logEntries = gridLogContainer.querySelectorAll('.log-entry');
+    if (logEntries.length > 50) {
         logEntries[0].remove();
     }
 }
@@ -1105,12 +1154,7 @@ function createSellOrderElement(order: SellOrder): HTMLElement {
     const orderActions = document.createElement('div');
     orderActions.className = 'order-actions';
     
-    const logButton = document.createElement('button');
-    logButton.className = 'btn btn-secondary';
-    logButton.textContent = '로그 보기';
-    logButton.onclick = (event) => viewInModal(order.id, event);
-    
-    orderActions.appendChild(logButton);
+    // 로그보기 버튼 제거 - 로그 뷰어에서 확인
     
     header.appendChild(expandIcon);
     header.appendChild(orderInfo);
@@ -1262,19 +1306,25 @@ function displayLogContent(orderId: string, containerId: string): void {
 
 // 그리드 로그 패널 초기화
 function initializeGridLogs(): void {
+    console.log('로그 뷰어 그리드 초기화 시작');
     const container = document.getElementById('log-grid-container');
-    if (!container) return;
+    if (!container) {
+        console.log('로그 그리드 컨테이너를 찾을 수 없음');
+        return;
+    }
     
     container.innerHTML = '';
     
-    Object.keys(logData).forEach((orderId, index) => {
-        const order = logData[orderId];
-        if (!order) return;
-        
-        const panel = createLogPanel(orderId, order.title, 'active');
+    console.log('현재 주문 목록:', sellOrders);
+    
+    // 각 주문에 대한 로그 패널 생성
+    sellOrders.forEach((order, index) => {
+        const panel = createLogPanel(order.id, `${order.name} (${order.platform})`, order.status);
         container.appendChild(panel);
-        displayLogContent(orderId, `grid-log-${index + 1}`);
+        console.log('로그 패널 생성됨:', order.id);
     });
+    
+    console.log('로그 뷰어 그리드 초기화 완료');
 }
 
 // 로그 패널 생성 함수
@@ -1297,7 +1347,7 @@ function createLogPanel(orderId: string, title: string, status: 'active' | 'inac
     
     const content = document.createElement('div');
     content.className = 'log-panel-content';
-    content.id = `grid-log-${orderId}`;
+    content.id = `${orderId}-grid-logs`;
     
     panel.appendChild(header);
     panel.appendChild(content);
@@ -1332,6 +1382,24 @@ function checkAuth(): void {
         // Redirect to login if not authenticated
         showPage('login');
     }
+}
+
+// 시스템 로그 지우기
+function clearSystemLog(): void {
+    const systemLogContainer = document.getElementById('system-log-container');
+    if (systemLogContainer) {
+        systemLogContainer.innerHTML = '';
+    }
+}
+
+// 모든 그리드 로그 지우기
+function clearAllGridLogs(): void {
+    sellOrders.forEach(order => {
+        const gridLogContainer = document.getElementById(`${order.id}-grid-logs`);
+        if (gridLogContainer) {
+            gridLogContainer.innerHTML = '';
+        }
+    });
 }
 
 // Initialize app
