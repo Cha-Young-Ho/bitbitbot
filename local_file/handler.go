@@ -34,6 +34,58 @@ type SellOrder struct {
 	LastUpdated      time.Time  `json:"lastUpdated,omitempty"`
 }
 
+// UpdateSellOrder 사용자 예약 매도 주문을 수정합니다
+func (h *Handler) UpdateSellOrder(userID string, oldName string, updated SellOrder) error {
+	if userID == "" || oldName == "" {
+		return fmt.Errorf("필수 인자가 비어있습니다")
+	}
+	for ui, user := range h.data {
+		if user.ID != userID {
+			continue
+		}
+		// 이름 중복 방지 (이름이 변경되는 경우)
+		if updated.Name != oldName && updated.Name != "" {
+			for _, o := range user.SellOrderList {
+				if o.Name == updated.Name {
+					return fmt.Errorf("이미 존재하는 매도 주문 별칭입니다: %s", updated.Name)
+				}
+			}
+		}
+		for oi, o := range user.SellOrderList {
+			if o.Name == oldName {
+				// 로그는 유지
+				updated.Logs = o.Logs
+				updated.LastUpdated = time.Now()
+				h.data[ui].SellOrderList[oi] = updated
+				return h.saveData()
+			}
+		}
+		return fmt.Errorf("주문을 찾을 수 없습니다: %s", oldName)
+	}
+	return fmt.Errorf("사용자를 찾을 수 없습니다: %s", userID)
+}
+
+// RemoveSellOrder 사용자 예약 매도 주문을 삭제합니다
+func (h *Handler) RemoveSellOrder(userID string, name string) error {
+	if userID == "" || name == "" {
+		return fmt.Errorf("필수 인자가 비어있습니다")
+	}
+	for ui, user := range h.data {
+		if user.ID != userID {
+			continue
+		}
+		for oi, o := range user.SellOrderList {
+			if o.Name == name {
+				// 삭제
+				h.data[ui].SellOrderList = append(user.SellOrderList[:oi], user.SellOrderList[oi+1:]...)
+				return h.saveData()
+			}
+		}
+		return fmt.Errorf("주문을 찾을 수 없습니다: %s", name)
+	}
+	return fmt.Errorf("사용자를 찾을 수 없습니다: %s", userID)
+}
+
 type OrderLog struct {
 	Timestamp   time.Time `json:"timestamp"`
 	Message     string    `json:"message"`

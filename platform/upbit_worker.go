@@ -2,10 +2,20 @@ package platform
 
 import (
 	"bitbit-app/local_file"
+	"bytes"
 	"context"
+	"crypto/sha512"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"log"
+	"net/http"
+	"net/url"
+	"sort"
+	"strings"
 	"time"
+
+	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // UpbitWorker Upbit 플랫폼용 워커
@@ -13,6 +23,8 @@ type UpbitWorker struct {
 	*BaseWorker
 	accessKey string
 	secretKey string
+	url       string
+	accounts  string
 }
 
 // NewUpbitWorker 새로운 Upbit 워커를 생성합니다
@@ -21,14 +33,9 @@ func NewUpbitWorker(order local_file.SellOrder, manager *WorkerManager, accessKe
 		BaseWorker: NewBaseWorker(order, manager),
 		accessKey:  accessKey,
 		secretKey:  secretKey,
+		url:        "https://api.upbit.com/v1/orders",
+		accounts:   "https://api.upbit.com/v1/accounts",
 	}
-}
-
-// getCurrentPrice Upbit에서 현재 가격을 조회합니다
-func (uw *UpbitWorker) getCurrentPrice() (float64, error) {
-	// Upbit API를 사용하여 현재가 조회
-	// TODO: 실제 Upbit API 구현
-	return 0, fmt.Errorf("Upbit API가 아직 구현되지 않았습니다")
 }
 
 // Start 워커를 시작합니다
@@ -47,54 +54,174 @@ func (uw *UpbitWorker) Start(ctx context.Context) error {
 	// 워커 고루틴 시작
 	go uw.run()
 
-	log.Printf("Upbit 워커 시작: %s", uw.order.Name)
+	uw.manager.SendSystemLog("UpbitWorker", "Start", "Upbit 워커 시작", "info", "", uw.order.Name, "")
 	return nil
 }
 
 // run 워커의 메인 루프
 func (uw *UpbitWorker) run() {
-	ticker := time.NewTicker(time.Duration(uw.order.Term) * time.Second)
+	// Term(초)이 소수일 수 있으므로 밀리초로 변환하여 절삭 방지, 최소 1ms 보장
+
+	fmt.Println("Upbit 워커 시작 ")
+	intervalMs := int64(uw.order.Term * 1000)
+	if intervalMs < 1 {
+		intervalMs = 1
+	}
+	ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
 	defer ticker.Stop()
 
 	// 시작 로그
 	uw.sendLog("Upbit 워커가 시작되었습니다", "info")
-	fmt.Printf("[Upbit] 워커 시작 - 주문명: %s, 심볼: %s, 목표가: %.2f\n",
-		uw.order.Name, uw.order.Symbol, uw.order.Price)
 
 	for {
 		select {
 		case <-uw.ctx.Done():
 			uw.sendLog("Upbit 워커가 중지되었습니다", "info")
-			fmt.Printf("[Upbit] 워커 중지 - 주문명: %s\n", uw.order.Name)
 			return
 		case <-ticker.C:
-			uw.printStatus()
+			fmt.Println("Upbit 워커 실행 ")
+			// 매 tick마다 반드시 실행: 비동기 고루틴으로 처리 (이전 요청 진행 중이어도 새 요청 즉시 시작)
+			go uw.executeSellOrder(uw.order.Price)
 		}
 	}
 }
 
-// printStatus 현재 상태를 출력합니다
-func (uw *UpbitWorker) printStatus() {
-	uw.mu.Lock()
-	uw.status.LastCheck = time.Now()
-	uw.status.CheckCount++
-	uw.mu.Unlock()
-
-	fmt.Printf("[Upbit] 상태 출력 - 주문명: %s, 심볼: %s, 목표가: %.2f, 수량: %.8f, 체크횟수: %d\n",
-		uw.order.Name, uw.order.Symbol, uw.order.Price, uw.order.Quantity, uw.status.CheckCount)
-
-	uw.sendStatusLog(fmt.Sprintf("Upbit 상태 확인 - 체크횟수: %d, 목표가: %.2f, 현재가: %.2f",
-		uw.status.CheckCount, uw.order.Price, uw.status.LastPrice))
-}
-
 // executeSellOrder Upbit에서 매도 주문을 실행합니다
 func (uw *UpbitWorker) executeSellOrder(price float64) {
+	// Upbit 지정가 매도: POST /v1/orders
+	// params: market, side=ask, volume, price, ord_type=limit
 	uw.sendLog(fmt.Sprintf("Upbit 매도 주문 실행 (가격: %.2f, 수량: %.8f)", price, uw.order.Quantity), "order", price, uw.order.Quantity)
-	fmt.Printf("[Upbit] 매도 주문 실행 - 주문명: %s, 가격: %.2f, 수량: %.8f\n",
-		uw.order.Name, price, uw.order.Quantity)
+
+	params := url.Values{}
+	params.Set("market", toUpbitMarket(uw.order.Symbol)) // 예: KRW-BTC 형식으로 변환
+	params.Set("side", "ask")                            // 매도
+	params.Set("volume", fmt.Sprintf("%.8f", uw.order.Quantity))
+	params.Set("price", fmt.Sprintf("%.8f", price))
+	params.Set("ord_type", "limit")
+
+	// JWT 생성 (query_hash 포함) - 업비트 스펙에 맞춰 인코딩되지 않은 쿼리 문자열로 해시 생성
+	jwtToken, err := uw.createUserJWTToken(params)
+	if err != nil {
+		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", "JWT 생성 실패", "error", "", uw.order.Name, err.Error())
+		return
+	}
+	headers, _ := uw.createHeader(jwtToken)
+
+	// JSON 바디 구성
+	body := map[string]string{
+		"market":   params.Get("market"),
+		"side":     params.Get("side"),
+		"volume":   params.Get("volume"),
+		"price":    params.Get("price"),
+		"ord_type": params.Get("ord_type"),
+	}
+	var bufBytes []byte
+	bufBytes, err = json.Marshal(body)
+	if err != nil {
+		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", "바디 변환 실패", "error", "", uw.order.Name, err.Error())
+		return
+	}
+
+	req, err := http.NewRequestWithContext(uw.ctx, http.MethodPost, uw.url, bytes.NewReader(bufBytes))
+	if err != nil {
+		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", "요청 생성 실패", "error", "", uw.order.Name, err.Error())
+		return
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", "요청 실패", "error", "", uw.order.Name, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	var respBody map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
+		// 상태코드만 로그
+		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", fmt.Sprintf("응답 파싱 실패 (status=%d)", resp.StatusCode), "error", "", uw.order.Name, err.Error())
+		return
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// 실패 사유를 터미널과 시스템 로그에 함께 남김
+		errMsg := fmt.Sprintf("주문 실패 (status=%d): %v", resp.StatusCode, respBody)
+		// 터미널 출력
+		fmt.Println("[UpbitWorker]", errMsg)
+		// 시스템 로그
+		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", errMsg, "error", "", uw.order.Name, "")
+		return
+	}
+	uw.sendLog("Upbit 지정가 매도 주문이 접수되었습니다", "success")
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
 func (uw *UpbitWorker) GetPlatformName() string {
 	return "Upbit"
+}
+
+func (uw *UpbitWorker) createUserJWTToken(params url.Values) (string, error) {
+	claims := jwt.MapClaims{
+		"access_key": uw.accessKey,
+		"nonce":      uuid.NewString(),
+	}
+	if len(params) > 0 {
+		// 업비트 요구사항: 인코딩되지 않은 쿼리 문자열로 SHA512 해시 생성
+		// 1) 키를 정렬
+		keys := make([]string, 0, len(params))
+		for k := range params {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		// 2) key=value 형식으로 연결 (값은 인코딩하지 않음), 여러 값이면 key=value1&key=value2 순서로
+		var b strings.Builder
+		first := true
+		for _, k := range keys {
+			for _, v := range params[k] {
+				if !first {
+					b.WriteByte('&')
+				} else {
+					first = false
+				}
+				b.WriteString(k)
+				b.WriteByte('=')
+				b.WriteString(v)
+			}
+		}
+		rawQuery := b.String()
+		sum := sha512.Sum512([]byte(rawQuery))
+		claims["query_hash"] = hex.EncodeToString(sum[:])
+		claims["query_hash_alg"] = "SHA512"
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(uw.secretKey))
+}
+
+func (uw *UpbitWorker) createHeader(jwtToken string) (map[string]string, error) {
+	headers := make(map[string]string)
+	headers["Authorization"] = fmt.Sprintf("Bearer %s", jwtToken)
+	headers["Content-Type"] = "application/json; charset=utf-8"
+	return headers, nil
+}
+
+// UpbitAccount 전체 계좌 조회 응답 모델
+type UpbitAccount struct {
+	Currency            string `json:"currency"`
+	Balance             string `json:"balance"`
+	Locked              string `json:"locked"`
+	AvgBuyPrice         string `json:"avg_buy_price"`
+	AvgBuyPriceModified bool   `json:"avg_buy_price_modified"`
+	UnitCurrency        string `json:"unit_currency"`
+}
+
+// toUpbitMarket 사용자 입력("BTC/KRW")을 업비트 마켓 포맷("KRW-BTC")으로 변환
+func toUpbitMarket(symbol string) string {
+	parts := strings.Split(symbol, "/")
+	if len(parts) != 2 {
+		return symbol // 포맷이 다르면 원본 반환
+	}
+	base := strings.TrimSpace(strings.ToUpper(parts[0]))
+	quote := strings.TrimSpace(strings.ToUpper(parts[1]))
+	return quote + "-" + base
 }

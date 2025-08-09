@@ -150,7 +150,10 @@ func (c *Client) readPump() {
 			break
 		}
 
-		// 메시지 처리 (필요시)
+		// 메시지 처리 (개발모드 노이즈 제거)
+		if string(message) == "runtime:ready" {
+			continue
+		}
 		log.Printf("클라이언트 %s로부터 메시지 수신: %s", c.ID, string(message))
 	}
 }

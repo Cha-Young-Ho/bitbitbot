@@ -51,8 +51,6 @@ func (h *Handler) Login(userID, password string) map[string]interface{} {
 		}
 	}
 
-	log.Printf("로그인 성공: userID=%s", userID)
-
 	// 로그인 성공 시 사용자의 모든 매도 예약 주문에 대한 워커 생성
 	go func() {
 		if err := h.createWorkersForUser(userID, userData); err != nil {
@@ -140,7 +138,6 @@ func (h *Handler) GetAccountInfo(userID string) map[string]interface{} {
 
 // createWorkersForUser 사용자의 모든 매도 예약 주문에 대한 워커를 생성합니다
 func (h *Handler) createWorkersForUser(userID string, userData *local_file.UserData) error {
-	log.Printf("사용자 워커 생성 시작: userID=%s, 주문 수=%d", userID, len(userData.SellOrderList))
 
 	createdCount := 0
 	failedCount := 0
@@ -212,6 +209,12 @@ func (h *Handler) stopWorkersForUser(userID string) {
 
 	// 모든 워커 중지
 	h.platformHandler.GetWorkerManager().StopAllWorkers()
+	// 메모리 정리: 해당 사용자의 워커 인덱스 제거
+	wm := h.platformHandler.GetWorkerManager()
+	info := wm.GetWorkerInfoByUserID(userID)
+	for orderName := range info {
+		_ = wm.RemoveWorker(orderName)
+	}
 
 	log.Printf("사용자 워커 중지 완료: userID=%s", userID)
 }

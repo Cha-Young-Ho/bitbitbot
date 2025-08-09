@@ -2,7 +2,6 @@ package platform
 
 import (
 	"bitbit-app/local_file"
-	"fmt"
 	"log"
 	"strings"
 )
@@ -111,7 +110,7 @@ func (h *Handler) AddPlatform(userID string, platformName string, name string, a
 		if existingPlatform.PlatformName == platformName && existingPlatform.Name == name {
 			return map[string]interface{}{
 				"success": false,
-				"message": fmt.Sprintf("이미 존재하는 플랫폼 별칭입니다: %s - %s", platformName, name),
+				"message": "이미 존재하는 플랫폼 별칭입니다",
 			}
 		}
 	}
@@ -180,7 +179,7 @@ func (h *Handler) RemovePlatform(userID string, platformName string, name string
 	if !found {
 		return map[string]interface{}{
 			"success": false,
-			"message": fmt.Sprintf("플랫폼을 찾을 수 없습니다: %s - %s", platformName, name),
+			"message": "플랫폼을 찾을 수 없습니다",
 		}
 	}
 
@@ -192,6 +191,14 @@ func (h *Handler) RemovePlatform(userID string, platformName string, name string
 		return map[string]interface{}{
 			"success": false,
 			"message": err.Error(),
+		}
+	}
+
+	// 해당 API Key를 사용하는 모든 예약 매도 워커 중지 및 제거
+	for _, order := range userData.SellOrderList {
+		if order.Platform == platformName && order.PlatformNickName == name {
+			_ = h.workerManager.StopWorker(order.Name)
+			_ = h.workerManager.RemoveWorker(order.Name)
 		}
 	}
 
@@ -402,6 +409,24 @@ func (h *Handler) AddSellOrder(userID string, orderName string, symbol string, p
 		}
 	}
 
+	// 방금 추가한 주문에 대해 워커 즉시 생성/시작 (API Key는 저장된 것을 사용)
+	var pk local_file.PlatformKey
+	found := false
+	for _, key := range userData.PlatformKeyList {
+		if key.PlatformName == platformName && key.Name == platformNickName {
+			pk = key
+			found = true
+			break
+		}
+	}
+	if found {
+		if err := h.CreateWorkerForOrder(newSellOrder, userID, pk.PlatformAccessKey, pk.PlatformSecretKey); err != nil {
+			h.workerManager.SendSystemLog("Handler", "AddSellOrder", "워커 생성 실패", "error", userID, orderName, err.Error())
+		}
+	} else {
+		h.workerManager.SendSystemLog("Handler", "AddSellOrder", "플랫폼 키를 찾을 수 없습니다", "error", userID, orderName, "")
+	}
+
 	log.Printf("예약 매도 주문 추가 완료: userID=%s, orderName=%s, platform=%s", userID, orderName, platformName)
 	return map[string]interface{}{
 		"success": true,
@@ -431,6 +456,66 @@ func (h *Handler) GetSellOrders(userID string) map[string]interface{} {
 		"success":    true,
 		"sellOrders": userData.SellOrderList,
 	}
+}
+
+// UpdateSellOrder 예약 매도 주문 수정
+func (h *Handler) UpdateSellOrder(userID string, oldName string, orderName string, symbol string, price float64, quantity float64, term float64, platformName string, platformNickName string) map[string]interface{} {
+	userID = strings.TrimSpace(userID)
+	oldName = strings.TrimSpace(oldName)
+	orderName = strings.TrimSpace(orderName)
+	symbol = strings.TrimSpace(symbol)
+	platformName = strings.TrimSpace(platformName)
+	platformNickName = strings.TrimSpace(platformNickName)
+	if userID == "" || oldName == "" || orderName == "" || symbol == "" || price <= 0 || quantity <= 0 || term <= 0 {
+		return map[string]interface{}{"success": false, "message": "필수 값 오류"}
+	}
+	userData, err := h.localFileHandler.GetUserByID(userID)
+	if err != nil {
+		return map[string]interface{}{"success": false, "message": err.Error()}
+	}
+	updated := local_file.SellOrder{Name: orderName, Symbol: symbol, Price: price, Quantity: quantity, Term: term, Platform: platformName, PlatformNickName: platformNickName}
+	if err := h.localFileHandler.UpdateSellOrder(userID, oldName, updated); err != nil {
+		return map[string]interface{}{"success": false, "message": err.Error()}
+	}
+	// 워커 재생성 필요: 기존 워커가 있다면 중지 후 새로 시작
+	if err := h.workerManager.StopWorker(oldName); err == nil {
+		_ = h.workerManager.RemoveWorker(oldName)
+	}
+	// 이름이 변경되었으면 새 이름으로 워커 생성 (필요 시)
+	// 플랫폼 키 조회
+	var pk local_file.PlatformKey
+	found := false
+	for _, key := range userData.PlatformKeyList {
+		if key.PlatformName == platformName && key.Name == platformNickName {
+			pk = key
+			found = true
+			break
+		}
+	}
+	if found {
+		// 새 워커 생성/시작은 사용자의 의도에 따라 다를 수 있어 선택적으로 수행
+		order := updated
+		if err := h.CreateWorkerForOrder(order, userID, pk.PlatformAccessKey, pk.PlatformSecretKey); err != nil {
+			h.workerManager.SendSystemLog("Handler", "UpdateSellOrder", "워커 재시작 실패", "error", userID, orderName, err.Error())
+		}
+	}
+	return map[string]interface{}{"success": true, "message": "예약 매도 주문이 수정되었습니다."}
+}
+
+// RemoveSellOrder 예약 매도 주문 삭제
+func (h *Handler) RemoveSellOrder(userID string, orderName string) map[string]interface{} {
+	userID = strings.TrimSpace(userID)
+	orderName = strings.TrimSpace(orderName)
+	if userID == "" || orderName == "" {
+		return map[string]interface{}{"success": false, "message": "필수 값 오류"}
+	}
+	if err := h.localFileHandler.RemoveSellOrder(userID, orderName); err != nil {
+		return map[string]interface{}{"success": false, "message": err.Error()}
+	}
+	// 해당 워커가 돌고 있으면 중지/제거
+	_ = h.workerManager.StopWorker(orderName)
+	_ = h.workerManager.RemoveWorker(orderName)
+	return map[string]interface{}{"success": true, "message": "예약 매도 주문이 삭제되었습니다."}
 }
 
 // StartWorkerForOrder 특정 주문에 대한 워커를 시작합니다
@@ -495,7 +580,7 @@ func (h *Handler) StartWorkerForOrder(userID string, orderName string) map[strin
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": fmt.Sprintf("워커 생성 실패: %v", err),
+			"message": "워커 생성 실패",
 		}
 	}
 
@@ -503,7 +588,7 @@ func (h *Handler) StartWorkerForOrder(userID string, orderName string) map[strin
 	if err := h.workerManager.AddWorker(orderName, userID, worker); err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": fmt.Sprintf("워커 추가 실패: %v", err),
+			"message": "워커 추가 실패",
 		}
 	}
 
@@ -511,7 +596,7 @@ func (h *Handler) StartWorkerForOrder(userID string, orderName string) map[strin
 	if err := h.workerManager.StartWorker(orderName); err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": fmt.Sprintf("워커 시작 실패: %v", err),
+			"message": "워커 시작 실패",
 		}
 	}
 
@@ -538,7 +623,7 @@ func (h *Handler) StopWorkerForOrder(userID string, orderName string) map[string
 	if err := h.workerManager.StopWorker(orderName); err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": fmt.Sprintf("워커 중지 실패: %v", err),
+			"message": "워커 중지 실패",
 		}
 	}
 
@@ -546,7 +631,7 @@ func (h *Handler) StopWorkerForOrder(userID string, orderName string) map[string
 	if err := h.workerManager.RemoveWorker(orderName); err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": fmt.Sprintf("워커 제거 실패: %v", err),
+			"message": "워커 제거 실패",
 		}
 	}
 
@@ -681,7 +766,7 @@ func (h *Handler) StartAllWorkersForUser(userID string) map[string]interface{} {
 		"success":      true,
 		"startedCount": startedCount,
 		"failedCount":  failedCount,
-		"message":      fmt.Sprintf("%d개 워커가 시작되었습니다. (실패: %d개)", startedCount, failedCount),
+		"message":      "모든 워커가 시작되었습니다.",
 	}
 }
 
@@ -721,17 +806,17 @@ func (h *Handler) CreateWorkerForOrder(order local_file.SellOrder, userID string
 	// 워커 생성
 	worker, err := h.workerFactory.CreateWorker(order, accessKey, secretKey)
 	if err != nil {
-		return fmt.Errorf("워커 생성 실패: %w", err)
+		return err
 	}
 
 	// 워커 매니저에 추가
 	if err := h.workerManager.AddWorker(order.Name, userID, worker); err != nil {
-		return fmt.Errorf("워커 추가 실패: %w", err)
+		return err
 	}
 
 	// 워커 시작
 	if err := h.workerManager.StartWorker(order.Name); err != nil {
-		return fmt.Errorf("워커 시작 실패: %w", err)
+		return err
 	}
 
 	return nil
@@ -813,6 +898,7 @@ func (h *Handler) ClearWorkerLogsByOrderName(userID string, orderName string) ma
 }
 
 // GetWorkerLogsStream 사용자의 워커 로그를 실시간으로 스트리밍합니다
+// (삭제) GetWorkerLogsStream: 웹소켓 통합으로 불필요
 func (h *Handler) GetWorkerLogsStream(userID string) map[string]interface{} {
 	userID = strings.TrimSpace(userID)
 
@@ -843,6 +929,7 @@ func (h *Handler) GetWorkerLogsStream(userID string) map[string]interface{} {
 }
 
 // GetOrderLogs 특정 주문의 로그를 반환합니다
+// (삭제) GetOrderLogs: 웹소켓 통합으로 불필요
 func (h *Handler) GetOrderLogs(userID string, orderName string) map[string]interface{} {
 	userID = strings.TrimSpace(userID)
 	orderName = strings.TrimSpace(orderName)
@@ -876,6 +963,8 @@ func (h *Handler) GetOrderLogs(userID string, orderName string) map[string]inter
 }
 
 // SubscribeToLogs 로그 구독을 시작합니다
+// (삭제) SubscribeToLogs: 웹소켓 통합으로 불필요
+// 제거 예정: WebSocket 통합으로 대체됨
 func (h *Handler) SubscribeToLogs(userID string) map[string]interface{} {
 	userID = strings.TrimSpace(userID)
 
@@ -886,8 +975,7 @@ func (h *Handler) SubscribeToLogs(userID string) map[string]interface{} {
 		}
 	}
 
-	// 클라이언트 구독
-	_ = h.workerManager.SubscribeClient(userID)
+	// 구독 로직 제거됨
 
 	return map[string]interface{}{
 		"success": true,
@@ -897,6 +985,8 @@ func (h *Handler) SubscribeToLogs(userID string) map[string]interface{} {
 }
 
 // UnsubscribeFromLogs 로그 구독을 해제합니다
+// (삭제) UnsubscribeFromLogs: 웹소켓 통합으로 불필요
+// 제거 예정: WebSocket 통합으로 대체됨
 func (h *Handler) UnsubscribeFromLogs(userID string) map[string]interface{} {
 	userID = strings.TrimSpace(userID)
 
@@ -907,8 +997,7 @@ func (h *Handler) UnsubscribeFromLogs(userID string) map[string]interface{} {
 		}
 	}
 
-	// 클라이언트 구독 해제
-	h.workerManager.UnsubscribeClient(userID)
+	// 구독 해제 로직 제거됨
 
 	return map[string]interface{}{
 		"success": true,
@@ -918,6 +1007,8 @@ func (h *Handler) UnsubscribeFromLogs(userID string) map[string]interface{} {
 }
 
 // GetUnifiedLogs 통합된 로그를 반환합니다
+// (삭제) GetUnifiedLogs: 웹소켓 통합으로 불필요
+// 제거 예정: WebSocket 통합으로 대체됨
 func (h *Handler) GetUnifiedLogs(userID string) map[string]interface{} {
 	userID = strings.TrimSpace(userID)
 
@@ -928,27 +1019,9 @@ func (h *Handler) GetUnifiedLogs(userID string) map[string]interface{} {
 		}
 	}
 
-	// 통합된 로그 채널에서 최근 로그들 수집
-	logs := []UnifiedLog{}
-	logChan := h.workerManager.GetUnifiedLogChannel()
-
-	// 최근 50개 로그 수집
-	for i := 0; i < 50; i++ {
-		select {
-		case log := <-logChan:
-			if log.UserID == userID {
-				logs = append(logs, log)
-			}
-		default:
-			// 더 이상 로그가 없으면 종료
-			goto done
-		}
-	}
-
-done:
 	return map[string]interface{}{
 		"success": true,
-		"logs":    logs,
-		"count":   len(logs),
+		"logs":    []any{},
+		"count":   0,
 	}
 }

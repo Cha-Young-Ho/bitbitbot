@@ -270,19 +270,19 @@
                 </div>
                 <div class="form-group">
                     <label for="symbol">심볼</label>
-                    <input type="text" name="symbol" placeholder="예: BTC/KRW, BTC/USDT" required>
+                    <input type="text" name="symbol" placeholder="예: BTC/KRW, ETH/USDT" pattern="^[A-Za-z0-9]+\/(KRW|USDT|BTC)$" title="형식: BASE/QUOTE, QUOTE는 KRW|USDT|BTC만 허용" required>
                 </div>
                 <div class="form-group">
                     <label for="price">목표가</label>
-                    <input type="number" name="price" step="0.01" placeholder="목표가를 입력하세요" required>
+                    <input type="number" name="price" step="any" placeholder="목표가를 입력하세요" required>
                 </div>
                 <div class="form-group">
                     <label for="quantity">수량</label>
-                    <input type="number" name="quantity" step="0.0001" placeholder="수량을 입력하세요" required>
+                    <input type="number" name="quantity" step="any" placeholder="수량을 입력하세요" required>
                 </div>
                 <div class="form-group">
                     <label for="term">주기 (초)</label>
-                    <input type="number" name="term" step="0.01" placeholder="주기를 초 단위로 입력하세요" required>
+                    <input type="number" name="term" step="any" placeholder="주기를 초 단위로 입력하세요" required>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeSellOrderModal()">취소</button>

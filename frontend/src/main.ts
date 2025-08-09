@@ -205,9 +205,9 @@ async function handleLogin(event: Event): Promise<void> {
         const result = await callLogin(formData.userID, formData.password);
         
         if (result && result.success) {
-            // Store user info
+            // Store user info (세션 기준)
             currentUser = result.user;
-            localStorage.setItem('userID', formData.userID);
+    sessionStorage.setItem('userID', formData.userID);
             
             showAlert(result.message, 'success');
             
@@ -407,7 +407,7 @@ function showDashboardTab(tabName: string): void {
             
             // 예약 매도 관리 탭이 활성화되면 목록 로드
             if (tabName === 'trading') {
-                const userID = localStorage.getItem('userID');
+                const userID = sessionStorage.getItem('userID');
                 if (userID) {
                     loadSellOrders(userID);
                     // 웹소켓 연결 시작
@@ -482,7 +482,7 @@ async function handlePlatformSubmit(event: Event): Promise<void> {
     showLoading(submitBtn);
     
     try {
-        const userID = localStorage.getItem('userID');
+        const userID = sessionStorage.getItem('userID');
         if (!userID) {
             showAlert('로그인이 필요합니다.', 'error');
             return;
@@ -526,7 +526,7 @@ async function removePlatform(platformName: string, name: string): Promise<void>
     const decodedName = name.replace(/&apos;/g, "'").replace(/&quot;/g, '"');
     
     try {
-        const userID = localStorage.getItem('userID');
+        const userID = sessionStorage.getItem('userID');
         
         if (!userID) {
             showAlert('로그인이 필요합니다.', 'error');
@@ -564,8 +564,25 @@ function closeSellOrderModal(): void {
     (document.getElementById('sell-order-form') as HTMLFormElement).reset();
 }
 
+function openEditOrderModal(order: SellOrder): void {
+    const modal = document.getElementById('sell-order-modal');
+    if (!modal) return;
+    // 폼 채우기
+    const form = document.getElementById('sell-order-form') as HTMLFormElement;
+    (form.querySelector('input[name="orderName"]') as HTMLInputElement).value = order.name;
+    (form.querySelector('input[name="symbol"]') as HTMLInputElement).value = order.symbol;
+    (form.querySelector('input[name="price"]') as HTMLInputElement).value = String(order.price);
+    (form.querySelector('input[name="quantity"]') as HTMLInputElement).value = String(order.quantity);
+    (form.querySelector('input[name="term"]') as HTMLInputElement).value = String(order.term);
+    const select = document.getElementById('platformKey-select') as HTMLSelectElement;
+    select.value = `${order.platform}-${order.platformNickName}`;
+    (modal as HTMLElement).classList.add('active');
+    (modal as any).dataset.editing = 'true';
+    (modal as any).dataset.oldName = order.name;
+}
+
 function loadPlatformKeys(): void {
-    const userID = localStorage.getItem('userID');
+    const userID = sessionStorage.getItem('userID');
     
     if (!userID) {
         showAlert('로그인이 필요합니다.', 'error');
@@ -637,9 +654,11 @@ async function handleSellOrderSubmit(event: Event): Promise<void> {
     
     // 입력값 검증
     console.log('입력값 검증 시작');
-    if (!platformKey || !orderName || !symbol || isNaN(price) || isNaN(quantity) || isNaN(term)) {
+    // 심볼 검증: BASE/QUOTE 형식, QUOTE는 KRW|USDT|BTC
+    const symbolOk = /^[A-Za-z0-9]+\/(KRW|USDT|BTC)$/.test(symbol || '');
+    if (!platformKey || !orderName || !symbol || !symbolOk || isNaN(price) || isNaN(quantity) || isNaN(term)) {
         console.log('입력값 검증 실패:', { platformKey, orderName, symbol, price, quantity, term });
-        showAlert('모든 필드를 올바르게 입력해주세요.', 'error');
+        showAlert('심볼 형식은 BASE/QUOTE 이며, QUOTE는 KRW, USDT, BTC만 허용됩니다.', 'error');
         return;
     }
     console.log('입력값 검증 통과');
@@ -648,7 +667,7 @@ async function handleSellOrderSubmit(event: Event): Promise<void> {
     showLoading(submitBtn);
     
     try {
-        const userID = localStorage.getItem('userID');
+        const userID = sessionStorage.getItem('userID');
         if (!userID) {
             showAlert('로그인이 필요합니다.', 'error');
             return;
@@ -657,14 +676,26 @@ async function handleSellOrderSubmit(event: Event): Promise<void> {
         // 플랫폼 정보 파싱
         const [platformName, platformNickName] = platformKey.split('-');
         
-        // 예약 매도 주문 추가
-        const result = await callAddSellOrder(userID, orderName, symbol, price, quantity, term, platformName, platformNickName);
+        // 편집 모드 여부
+        const modalEl = document.getElementById('sell-order-modal') as any;
+        const isEditing = modalEl?.dataset?.editing === 'true';
+        let result: any;
+        if (isEditing) {
+            const oldName = modalEl.dataset.oldName as string;
+            result = await callUpdateSellOrder(userID, oldName, orderName, symbol, price, quantity, term, platformName, platformNickName);
+            delete modalEl.dataset.editing;
+            delete modalEl.dataset.oldName;
+        } else {
+            // 예약 매도 주문 추가
+            result = await callAddSellOrder(userID, orderName, symbol, price, quantity, term, platformName, platformNickName);
+        }
         
         if (result.success) {
-            showAlert(result.message, 'success');
+            showAlert(result.message || (isEditing ? '수정되었습니다.' : '추가되었습니다.'), 'success');
             closeSellOrderModal();
             // 예약 매도 목록 새로고침
             await loadSellOrders(userID);
+            renderSellOrders();
         } else {
             showAlert(result.message, 'error');
         }
@@ -686,6 +717,28 @@ async function callAddSellOrder(userID: string, orderName: string, symbol: strin
         const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
         console.error('AddSellOrder error:', error);
         return { success: false, message: `예약 매도 추가 중 오류가 발생했습니다: ${errorMessage}` };
+    }
+}
+
+async function callUpdateSellOrder(userID: string, oldName: string, orderName: string, symbol: string, price: number, quantity: number, term: number, platformName: string, platformNickName: string): Promise<any> {
+    try {
+        const { UpdateSellOrder } = await import('../wailsjs/go/main/App');
+        const result = await UpdateSellOrder(userID, oldName, orderName, symbol, price, quantity, term, platformName, platformNickName);
+        return result;
+    } catch (error) {
+        console.error('UpdateSellOrder error:', error);
+        return { success: false, message: '예약 매도 수정 중 오류가 발생했습니다.' };
+    }
+}
+
+async function callRemoveSellOrder(userID: string, orderName: string): Promise<any> {
+    try {
+        const { RemoveSellOrder } = await import('../wailsjs/go/main/App');
+        const result = await RemoveSellOrder(userID, orderName);
+        return result;
+    } catch (error) {
+        console.error('RemoveSellOrder error:', error);
+        return { success: false, message: '예약 매도 삭제 중 오류가 발생했습니다.' };
     }
 }
 
@@ -747,57 +800,12 @@ async function callGetSellOrders(userID: string): Promise<any> {
     }
 }
 
-// 워커 로그 스트리밍 API 호출
-async function callGetWorkerLogsStream(userID: string): Promise<any> {
-    try {
-        const { GetWorkerLogsStream } = await import('../wailsjs/go/main/App');
-        const result = await GetWorkerLogsStream(userID);
-        return result;
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
-        console.error('GetWorkerLogsStream error:', error);
-        return { success: false, message: `워커 로그 스트리밍 중 오류가 발생했습니다: ${errorMessage}` };
-    }
-}
+// (삭제) 워커 로그 스트리밍 API 호출 제거: 웹소켓 통합으로 불필요
 
 // 특정 주문의 로그 조회 API 호출
-async function callGetOrderLogs(userID: string, orderName: string): Promise<any> {
-    try {
-        const { GetOrderLogs } = await import('../wailsjs/go/main/App');
-        const result = await GetOrderLogs(userID, orderName);
-        return result;
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
-        console.error('GetOrderLogs error:', error);
-        return { success: false, message: `주문 로그 조회 중 오류가 발생했습니다: ${errorMessage}` };
-    }
-}
+// (삭제) 주문 로그 조회 API 호출 제거: 웹소켓 통합으로 불필요
 
-// 로그 구독 API 호출
-async function callSubscribeToLogs(userID: string): Promise<any> {
-    try {
-        const { SubscribeToLogs } = await import('../wailsjs/go/main/App');
-        const result = await SubscribeToLogs(userID);
-        return result;
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
-        console.error('SubscribeToLogs error:', error);
-        return { success: false, message: `로그 구독 중 오류가 발생했습니다: ${errorMessage}` };
-    }
-}
-
-// 통합된 로그 조회 API 호출
-async function callGetUnifiedLogs(userID: string): Promise<any> {
-    try {
-        const { GetUnifiedLogs } = await import('../wailsjs/go/main/App');
-        const result = await GetUnifiedLogs(userID);
-        return result;
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
-        console.error('GetUnifiedLogs error:', error);
-        return { success: false, message: `통합 로그 조회 중 오류가 발생했습니다: ${errorMessage}` };
-    }
-}
+// (삭제) 구독/통합 로그 API 호출 제거: 웹소켓 통합으로 불필요
 
 // 예약 매도 목록 렌더링
 function renderSellOrders(): void {
@@ -821,7 +829,7 @@ function renderSellOrders(): void {
 let logUpdateInterval: NodeJS.Timeout | null = null;
 
 function startRealTimeLogUpdates(): void {
-    const userID = localStorage.getItem('userID');
+    const userID = sessionStorage.getItem('userID');
     if (!userID) return;
     
     // 기존 인터벌이 있으면 제거
@@ -841,7 +849,7 @@ function startRealTimeLogUpdates(): void {
 // 모든 주문의 로그 업데이트
 async function updateAllOrderLogs(userID: string): Promise<void> {
     for (const order of sellOrders) {
-        await updateOrderLogs(userID, order.id);
+    // (삭제) 구 API 호출 제거: 웹소켓에서 실시간 로그 처리
     }
 }
 
@@ -868,9 +876,22 @@ async function startWebSocketConnection(userID: string): Promise<void> {
         
         wsConnection.onmessage = (event) => {
             try {
-                const log = JSON.parse(event.data);
-                console.log('웹소켓 로그 수신:', log);
-                processUnifiedLog(log);
+                const payload = JSON.parse(event.data);
+                console.log('웹소켓 수신:', payload);
+
+                // 단일 통합 포맷 분기 처리
+                if (payload && payload.category) {
+                    if (payload.category === 'orderLog') {
+                        handleOrderOutbound(payload);
+                    } else if (payload.category === 'systemLog') {
+                        handleSystemOutbound(payload);
+                    } else {
+                        console.warn('알 수 없는 category:', payload.category);
+                    }
+                } else {
+                    // 구 포맷 호환 처리
+                    processUnifiedLog(payload);
+                }
             } catch (error) {
                 console.error('웹소켓 메시지 파싱 실패:', error);
             }
@@ -947,6 +968,36 @@ function processUnifiedLog(log: any): void {
     }
 }
 
+// 신규 포맷: 주문 로그 처리
+function handleOrderOutbound(envelope: { category: string; data: any }): void {
+    const data = envelope?.data ?? {};
+    // data는 백엔드 WorkerLog 포맷
+    // { orderName, platform, message, logType, timestamp, ... }
+    const order = sellOrders.find(o => o.id === data.orderName || o.name === data.orderName);
+    if (!order) {
+        console.log('해당 주문을 찾지 못했습니다(신규포맷):', data.orderName, data.platform);
+        return;
+    }
+    const normalized = {
+        timestamp: new Date(data.timestamp),
+        message: data.message ?? '',
+        logType: data.logType ?? 'info'
+    };
+    addLogToOrder(order.id, normalized);
+    addLogToGrid(order.id, normalized);
+}
+
+// 신규 포맷: 시스템 로그 처리
+function handleSystemOutbound(envelope: { category: string; data: any }): void {
+    const data = envelope?.data ?? {};
+    const normalized = {
+        timestamp: new Date(data.timestamp),
+        logType: data.logType ?? 'info',
+        message: data.message ?? ''
+    };
+    addSystemLog(normalized);
+}
+
 // 주문에 로그 추가 (예약 매도 관리)
 function addLogToOrder(orderName: string, log: any): void {
     const logContainer = document.getElementById(`${orderName}-logs`);
@@ -966,7 +1017,7 @@ function addLogToOrder(orderName: string, log: any): void {
     
     // 최대 20개 로그만 유지
     const logEntries = logContainer.querySelectorAll('.log-entry');
-    if (logEntries.length > 20) {
+    if (logEntries.length > 300) {
         logEntries[0].remove();
     }
 }
@@ -1002,86 +1053,21 @@ function addLogToGrid(orderName: string, log: any): void {
     }
 }
 
-// 특정 주문의 로그 업데이트
-async function updateOrderLogs(userID: string, orderName: string): Promise<void> {
-    try {
-        console.log('로그 업데이트 시작:', userID, orderName);
-        const result = await callGetOrderLogs(userID, orderName);
-        console.log('로그 업데이트 결과:', result);
-        if (result.success && result.logs) {
-            console.log('로그 업데이트 표시:', result.logs.length, '개');
-            displayOrderLogs(orderName, result.logs);
-        } else {
-            console.log('로그 업데이트 없음:', result);
-        }
-    } catch (error) {
-        console.error('로그 업데이트 실패:', error);
-    }
+// 시스템 로그 추가 (신규 및 구 포맷 공통 사용)
+function addSystemLog(log: { timestamp: Date | string | number; message: string; logType?: string }): void {
+    const systemLogContainer = document.getElementById('system-log-container');
+    if (!systemLogContainer) return;
+    const logEntry = document.createElement('div');
+    logEntry.className = `system-log-entry ${log.logType || 'info'}`;
+    const ts = new Date(log.timestamp).toLocaleTimeString();
+    logEntry.innerHTML = `<span class="timestamp">[${ts}]</span> ${log.message}`;
+    systemLogContainer.appendChild(logEntry);
+    systemLogContainer.scrollTop = systemLogContainer.scrollHeight;
+    const logEntries = systemLogContainer.querySelectorAll('.system-log-entry');
+    if (logEntries.length > 100) logEntries[0].remove();
 }
 
-// 주문 로그 로드
-async function loadOrderLogs(userID: string, orderName: string): Promise<void> {
-    try {
-        console.log('로그 로드 시작:', userID, orderName);
-        const result = await callGetOrderLogs(userID, orderName);
-        console.log('로그 로드 결과:', result);
-        if (result.success && result.logs) {
-            console.log('로그 표시 시작:', result.logs.length, '개');
-            displayOrderLogs(orderName, result.logs);
-        } else {
-            console.log('로그 없음 또는 실패:', result);
-        }
-    } catch (error) {
-        console.error('로그 로드 실패:', error);
-    }
-}
-
-// 주문 로그 표시
-function displayOrderLogs(orderName: string, logs: any[]): void {
-    const logContainer = document.getElementById(`${orderName}-logs`);
-    if (!logContainer) {
-        console.log('로그 컨테이너를 찾을 수 없습니다:', orderName);
-        return;
-    }
-    
-    console.log('로그 표시 시작:', orderName, logs.length, '개');
-    
-    // 기존 로그 제거
-    logContainer.innerHTML = '';
-    
-    // 최근 10개 로그만 표시
-    const recentLogs = logs.slice(-10);
-    
-    recentLogs.forEach((log, index) => {
-        const logEntry = document.createElement('div');
-        logEntry.className = 'log-entry';
-        
-        const timestamp = new Date(log.timestamp).toLocaleTimeString();
-        const message = log.message;
-        
-        logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
-        logContainer.appendChild(logEntry);
-        
-        console.log(`로그 ${index + 1}: [${timestamp}] ${message}`);
-    });
-    
-    // 자동 스크롤
-    logContainer.scrollTop = logContainer.scrollHeight;
-    
-    console.log('로그 표시 완료:', orderName);
-}
-
-// 모달 로그 로드
-async function loadModalLogs(userID: string, orderName: string): Promise<void> {
-    try {
-        const result = await callGetOrderLogs(userID, orderName);
-        if (result.success && result.logs) {
-            displayModalLogs(result.logs);
-        }
-    } catch (error) {
-        console.error('모달 로그 로드 실패:', error);
-    }
-}
+// (삭제) 주문 로그 조회/표시 관련 구 API 로직 제거: 웹소켓 통합으로 불필요
 
 // 모달 로그 표시
 function displayModalLogs(logs: any[]): void {
@@ -1153,9 +1139,30 @@ function createSellOrderElement(order: SellOrder): HTMLElement {
     
     const orderActions = document.createElement('div');
     orderActions.className = 'order-actions';
-    
-    // 로그보기 버튼 제거 - 로그 뷰어에서 확인
-    
+    // 수정 버튼
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-secondary';
+    editBtn.textContent = '수정';
+    editBtn.onclick = (e) => openEditOrderModal(order);
+    // 삭제 버튼
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-danger';
+    delBtn.textContent = '삭제';
+    delBtn.onclick = async (e) => {
+        e.stopPropagation();
+        const userID = sessionStorage.getItem('userID');
+        if (!userID) { showAlert('로그인이 필요합니다.', 'error'); return; }
+        const res = await callRemoveSellOrder(userID, order.name);
+        if (res.success) {
+            showAlert('삭제되었습니다.', 'success');
+            await loadSellOrders(userID);
+            renderSellOrders();
+        } else {
+            showAlert(res.message || '삭제 실패', 'error');
+        }
+    };
+    orderActions.appendChild(editBtn);
+    orderActions.appendChild(delBtn);
     header.appendChild(expandIcon);
     header.appendChild(orderInfo);
     header.appendChild(orderActions);
@@ -1215,11 +1222,11 @@ function createSellOrderElement(order: SellOrder): HTMLElement {
     logContent.id = `${order.id}-logs`;
     
     // 초기 로그 로드
-    const userID = localStorage.getItem('userID');
+    const userID = sessionStorage.getItem('userID');
     if (userID) {
-        loadOrderLogs(userID, order.id);
+    // (삭제) 구 API 호출 제거: 웹소켓에서 실시간 로그 처리
     }
-    
+    console.log();
     orderLogs.appendChild(logsTitle);
     orderLogs.appendChild(logContent);
     
@@ -1265,9 +1272,9 @@ function viewInModal(orderId: string, event?: Event): void {
             logContent.innerHTML = '';
             
             // 실제 로그 로드
-            const userID = localStorage.getItem('userID');
+            const userID = sessionStorage.getItem('userID');
             if (userID) {
-                loadModalLogs(userID, orderId);
+    // (삭제) 구 API 호출 제거: 웹소켓에서 실시간 로그 처리
             }
         }
         
@@ -1361,12 +1368,20 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Logout function
-function logout(): void {
+async function logout(): Promise<void> {
+    const userID = sessionStorage.getItem('userID');
+    if (userID) {
+        try {
+            const { Logout } = await import('../wailsjs/go/main/App');
+            await Logout(userID);
+        } catch (e) {
+            console.error('Logout API error:', e);
+        }
+    }
     // 웹소켓 연결 종료
     stopWebSocketConnection();
-    
     currentUser = null;
-    localStorage.removeItem('userID');
+    sessionStorage.removeItem('userID');
     showPage('home');
     // 로그아웃 시 알림 제거
     const existingAlert = document.querySelector('.alert');
@@ -1377,7 +1392,7 @@ function logout(): void {
 
 // Check if user is logged in
 function checkAuth(): void {
-    const userID = localStorage.getItem('userID');
+    const userID = sessionStorage.getItem('userID');
     if (!userID) {
         // Redirect to login if not authenticated
         showPage('login');
@@ -1410,12 +1425,9 @@ function initApp(): void {
         card.classList.add('fade-in');
     });
 
-    // Check if user is already logged in
-    const userID = localStorage.getItem('userID');
-    if (userID) {
-        showPage('dashboard');
-        getUserInfo(userID);
-    }
+    // 강제 비로그인 시작: 자동로그인 해제
+    sessionStorage.removeItem('userID');
+    showPage('login');
 }
 
 // Event listeners

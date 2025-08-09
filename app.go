@@ -51,9 +51,6 @@ func (a *App) startup(ctx context.Context) {
 			log.Printf("웹소켓 서버 시작 실패: %v", err)
 		}
 	}()
-
-	// 앱 시작 시 기존 사용자들의 워커 생성
-	go a.initializeWorkersForExistingUsers()
 }
 
 // LocalFileService 객체
@@ -125,6 +122,16 @@ func (a *App) GetSellOrders(userID string) map[string]interface{} {
 	return a.platformHandler.GetSellOrders(userID)
 }
 
+// UpdateSellOrder 예약 매도 주문 수정
+func (a *App) UpdateSellOrder(userID string, oldName string, orderName string, symbol string, price float64, quantity float64, term float64, platformName string, platformNickName string) map[string]interface{} {
+	return a.platformHandler.UpdateSellOrder(userID, oldName, orderName, symbol, price, quantity, term, platformName, platformNickName)
+}
+
+// RemoveSellOrder 예약 매도 주문 삭제
+func (a *App) RemoveSellOrder(userID string, orderName string) map[string]interface{} {
+	return a.platformHandler.RemoveSellOrder(userID, orderName)
+}
+
 // Worker 관련 메서드들
 func (a *App) StartWorkerForOrder(userID string, orderName string) map[string]interface{} {
 	return a.platformHandler.StartWorkerForOrder(userID, orderName)
@@ -164,29 +171,19 @@ func (a *App) ClearWorkerLogsByOrderName(userID string, orderName string) map[st
 }
 
 // GetWorkerLogsStream 사용자의 워커 로그를 실시간으로 스트리밍합니다
-func (a *App) GetWorkerLogsStream(userID string) map[string]interface{} {
-	return a.platformHandler.GetWorkerLogsStream(userID)
-}
+// (삭제) GetWorkerLogsStream: 웹소켓 통합으로 불필요
 
 // GetOrderLogs 특정 주문의 로그를 반환합니다
-func (a *App) GetOrderLogs(userID string, orderName string) map[string]interface{} {
-	return a.platformHandler.GetOrderLogs(userID, orderName)
-}
+// (삭제) GetOrderLogs: 웹소켓 통합으로 불필요
 
 // SubscribeToLogs 로그 구독을 시작합니다
-func (a *App) SubscribeToLogs(userID string) map[string]interface{} {
-	return a.platformHandler.SubscribeToLogs(userID)
-}
+// (삭제) SubscribeToLogs: 웹소켓 통합으로 불필요
 
 // UnsubscribeFromLogs 로그 구독을 해제합니다
-func (a *App) UnsubscribeFromLogs(userID string) map[string]interface{} {
-	return a.platformHandler.UnsubscribeFromLogs(userID)
-}
+// (삭제) UnsubscribeFromLogs: 웹소켓 통합으로 불필요
 
 // GetUnifiedLogs 통합된 로그를 반환합니다
-func (a *App) GetUnifiedLogs(userID string) map[string]interface{} {
-	return a.platformHandler.GetUnifiedLogs(userID)
-}
+// (삭제) GetUnifiedLogs: 웹소켓 통합으로 불필요
 
 // initializeWorkersForExistingUsers 앱 시작 시 기존 사용자들의 워커를 생성합니다
 func (a *App) initializeWorkersForExistingUsers() {

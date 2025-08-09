@@ -91,7 +91,8 @@ func (bw *BaseWorker) GetOrderInfo() local_file.SellOrder {
 
 // run 워커의 메인 루프
 func (bw *BaseWorker) run() {
-	ticker := time.NewTicker(time.Duration(bw.order.Term) * time.Second)
+	// Term(초)이 소수일 수 있으므로, 밀리초 단위로 변환해 절삭 문제 방지
+	ticker := time.NewTicker(time.Duration(bw.order.Term*1000) * time.Millisecond)
 	defer ticker.Stop()
 
 	// 시작 로그
