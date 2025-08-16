@@ -5,7 +5,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
+
+	ccxt "github.com/ccxt/ccxt/go/v4"
 )
 
 // BinanceWorker Binance 플랫폼용 워커
@@ -13,14 +16,28 @@ type BinanceWorker struct {
 	*BaseWorker
 	accessKey string
 	secretKey string
+	exchange  ccxt.IExchange
 }
 
 // NewBinanceWorker 새로운 Binance 워커를 생성합니다
 func NewBinanceWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *BinanceWorker {
+	// CCXT 거래소 인스턴스 생성
+	exchange := ccxt.CreateExchange("binance", map[string]interface{}{
+		"apiKey":          accessKey,
+		"secret":          secretKey,
+		"timeout":         30000, // 30초
+		"sandbox":         false, // 실제 거래
+		"enableRateLimit": true,
+	})
+
+	// BaseWorker 생성 (exchange는 nil로 전달)
+	baseWorker := NewBaseWorker(order, manager)
+
 	return &BinanceWorker{
-		BaseWorker: NewBaseWorker(order, manager),
+		BaseWorker: baseWorker,
 		accessKey:  accessKey,
 		secretKey:  secretKey,
+		exchange:   exchange,
 	}
 }
 
@@ -37,22 +54,22 @@ func (bw *BinanceWorker) Start(ctx context.Context) error {
 	bw.isRunning = true
 	bw.status.IsRunning = true
 
-	// 워커 고루틴 시작
+	// 워커 고루틴 시작 (바이낸스 자체 run 사용)
 	go bw.run()
 
 	log.Printf("Binance 워커 시작: %s", bw.order.Name)
 	return nil
 }
 
-// run 워커의 메인 루프
+// run 워커의 메인 루프 (바이낸스 전용)
 func (bw *BinanceWorker) run() {
 	ticker := time.NewTicker(time.Duration(bw.order.Term) * time.Second)
 	defer ticker.Stop()
 
 	// 시작 로그
 	bw.sendLog("Binance 워커가 시작되었습니다", "info")
-	fmt.Printf("[Binance] 워커 시작 - 주문명: %s, 심볼: %s, 목표가: %.2f\n",
-		bw.order.Name, bw.order.Symbol, bw.order.Price)
+	fmt.Printf("[Binance] 워커 시작 - 주문명: %s, 심볼: %s, 지정가: %.2f, 주기: %.1f초\n",
+		bw.order.Name, bw.order.Symbol, bw.order.Price, bw.order.Term)
 
 	for {
 		select {
@@ -61,40 +78,82 @@ func (bw *BinanceWorker) run() {
 			fmt.Printf("[Binance] 워커 중지 - 주문명: %s\n", bw.order.Name)
 			return
 		case <-ticker.C:
-			bw.printStatus()
+			bw.executeSellOrder()
 		}
 	}
 }
 
-// printStatus 현재 상태를 출력합니다
-func (bw *BinanceWorker) printStatus() {
+// executeSellOrder 지정가 매도 주문을 실행합니다
+func (bw *BinanceWorker) executeSellOrder() {
+	// BaseWorker의 상태 업데이트
 	bw.mu.Lock()
 	bw.status.LastCheck = time.Now()
 	bw.status.CheckCount++
 	bw.mu.Unlock()
 
-	fmt.Printf("[Binance] 상태 출력 - 주문명: %s, 심볼: %s, 목표가: %.2f, 수량: %.8f, 체크횟수: %d\n",
-		bw.order.Name, bw.order.Symbol, bw.order.Price, bw.order.Quantity, bw.status.CheckCount)
+	// 거래소가 nil인 경우 에러 처리
+	if bw.exchange == nil {
+		bw.mu.Lock()
+		bw.status.ErrorCount++
+		bw.status.LastError = "거래소가 초기화되지 않았습니다"
+		bw.mu.Unlock()
 
-	bw.sendStatusLog(fmt.Sprintf("Binance 상태 확인 - 체크횟수: %d, 목표가: %.2f, 현재가: %.2f",
-		bw.status.CheckCount, bw.order.Price, bw.status.LastPrice))
-}
+		bw.sendLog("거래소가 초기화되지 않았습니다", "error")
+		return
+	}
 
-// getCurrentPrice Binance에서 현재 가격을 조회합니다
-func (bw *BinanceWorker) getCurrentPrice() (float64, error) {
-	// Binance API를 사용하여 현재가 조회
-	// TODO: 실제 Binance API 구현
-	return 0, fmt.Errorf("Binance API가 아직 구현되지 않았습니다")
-}
+	// 바이낸스 심볼 형식으로 변환 (예: BTC/USDT -> BTCUSDT)
+	binanceSymbol := bw.convertToBinanceSymbol(bw.order.Symbol)
 
-// executeSellOrder Binance에서 매도 주문을 실행합니다
-func (bw *BinanceWorker) executeSellOrder(price float64) {
-	bw.sendLog(fmt.Sprintf("Binance 매도 주문 실행 (가격: %.2f, 수량: %.8f)", price, bw.order.Quantity), "order", price, bw.order.Quantity)
-	fmt.Printf("[Binance] 매도 주문 실행 - 주문명: %s, 가격: %.2f, 수량: %.8f\n",
-		bw.order.Name, price, bw.order.Quantity)
+	// 디버깅을 위한 로그 추가
+	bw.sendLog(fmt.Sprintf("주문 시도 - 심볼: %s, 수량: %.8f, 가격: %.2f",
+		binanceSymbol, bw.order.Quantity, bw.order.Price), "info")
+
+	// CCXT를 사용한 지정가 매도 주문
+	orderID, err := bw.exchange.CreateLimitSellOrder(
+		binanceSymbol,     // 심볼 (예: BTCUSDT)
+		bw.order.Quantity, // 수량
+		bw.order.Price,    // 가격
+	)
+
+	if err != nil {
+		bw.mu.Lock()
+		bw.status.ErrorCount++
+		bw.status.LastError = err.Error()
+		bw.mu.Unlock()
+
+		bw.sendLog(fmt.Sprintf("매도 주문 실패: %v", err), "error")
+		bw.manager.SendSystemLog("BinanceWorker", "executeSellOrder",
+			fmt.Sprintf("매도 주문 실패: %v", err), "error", "", bw.order.Name, err.Error())
+		return
+	}
+
+	// 성공 로그
+	bw.sendLog(fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
+		bw.order.Price, bw.order.Quantity, orderID), "success", bw.order.Price, bw.order.Quantity)
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
 func (bw *BinanceWorker) GetPlatformName() string {
 	return "Binance"
+}
+
+// convertToBinanceSymbol 바이낸스 심볼 형식으로 변환합니다
+func (bw *BinanceWorker) convertToBinanceSymbol(symbol string) string {
+	// 사용자 입력: "BTC/USDT" -> 바이낸스 형식: "BTCUSDT"
+	parts := strings.Split(symbol, "/")
+	if len(parts) != 2 {
+		bw.sendLog(fmt.Sprintf("잘못된 심볼 형식: %s (올바른 형식: BTC/USDT)", symbol), "warning")
+		return symbol
+	}
+
+	base := strings.TrimSpace(strings.ToUpper(parts[0]))  // BTC
+	quote := strings.TrimSpace(strings.ToUpper(parts[1])) // USDT
+
+	// 바이낸스 마켓 형식으로 변환
+	binanceSymbol := base + quote // "BTCUSDT"
+
+	bw.sendLog(fmt.Sprintf("심볼 변환: %s -> %s", symbol, binanceSymbol), "info")
+
+	return binanceSymbol
 }
