@@ -256,6 +256,45 @@ func (h *Handler) ReloadData() error {
 	return h.loadData()
 }
 
+// GetUserData 사용자 데이터를 반환합니다
+func (h *Handler) GetUserData(userID string) *UserData {
+	for _, user := range h.data {
+		if user.ID == userID {
+			return &user
+		}
+	}
+	return nil
+}
+
+// SaveUserDataFromJSON JSON 데이터로부터 사용자 데이터를 저장합니다
+func (h *Handler) SaveUserDataFromJSON(userID string, jsonData string) error {
+	var userData UserData
+	if err := json.Unmarshal([]byte(jsonData), &userData); err != nil {
+		return fmt.Errorf("JSON 파싱 오류: %v", err)
+	}
+
+	// 사용자 ID 검증
+	if userData.ID != userID {
+		return fmt.Errorf("사용자 ID가 일치하지 않습니다")
+	}
+
+	// 기존 사용자 데이터 업데이트 또는 새로 추가
+	found := false
+	for i, existingUser := range h.data {
+		if existingUser.ID == userID {
+			h.data[i] = userData
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		h.data = append(h.data, userData)
+	}
+
+	return h.saveData()
+}
+
 // AddOrderLog 특정 사용자의 특정 주문에 로그를 추가합니다
 func (h *Handler) AddOrderLog(userID, orderName string, log OrderLog) error {
 	// 사용자 찾기

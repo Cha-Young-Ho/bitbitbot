@@ -88,6 +88,7 @@
                         <ul>
                             <li class="active"><a href="#" onclick="showDashboardTab('platforms')">거래소 Key 관리</a></li>
                             <li><a href="#" onclick="showDashboardTab('trading')">예약 매도 관리</a></li>
+                            <li><a href="#" onclick="showDashboardTab('file-management')">파일 관리</a></li>
                             <li><a href="#" onclick="showDashboardTab('log-viewer-grid')">로그 뷰어</a></li>
                             <li><a href="#" onclick="showDashboardTab('system-log')">시스템 로그</a></li>
                         </ul>
@@ -145,6 +146,33 @@
                                 <div id="trading-content">
                                     <div class="sell-order-list" id="sell-order-list-container">
                                         <!-- 동적으로 예약 매도 목록이 생성됩니다 -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 파일 관리 탭 -->
+                        <div id="file-management-tab" class="dashboard-tab">
+                            <div class="content-card">
+                                <div class="card-header">
+                                    <h3>파일 관리</h3>
+                                    <div class="file-management-actions">
+                                        <button class="btn btn-secondary" onclick="formatJSON()">
+                                            <span class="btn-icon">📝</span>
+                                            포맷 정리
+                                        </button>
+                                        <button class="btn btn-primary" onclick="saveFileData()">
+                                            <span class="btn-icon">💾</span>
+                                            저장
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="file-management-content">
+                                    <div class="json-editor-container">
+                                        <textarea id="json-editor" placeholder="JSON 데이터를 여기에 입력하세요..."></textarea>
+                                    </div>
+                                    <div class="json-status">
+                                        <span id="json-status-text">JSON 형식이 올바릅니다</span>
                                     </div>
                                 </div>
                             </div>

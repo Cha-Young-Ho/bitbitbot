@@ -388,6 +388,7 @@ function showDashboardTab(tabName: string): void {
         const titles: { [key: string]: string } = {
             'platforms': '거래소 Key 관리',
             'trading': '예약 매도 관리',
+            'file-management': '파일 관리',
             'settings': '설정',
             'system-log': '시스템 로그',
             'log-viewer-tabs': '로그 뷰어 (탭 기반)',
@@ -412,6 +413,14 @@ function showDashboardTab(tabName: string): void {
                     loadSellOrders(userID);
                     // 웹소켓 연결 시작
                     startWebSocketConnection(userID);
+                }
+            }
+            
+            // 파일 관리 탭이 활성화되면 파일 데이터 로드
+            if (tabName === 'file-management') {
+                const userID = sessionStorage.getItem('userID');
+                if (userID) {
+                    loadFileData(userID);
                 }
             }
 }
@@ -1485,6 +1494,162 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+// 파일 관리 관련 함수들
+async function callGetLocalFileData(userID: string): Promise<any> {
+    try {
+        const { GetLocalFileData } = await import('../wailsjs/go/main/App');
+        const result = await GetLocalFileData(userID);
+        return result;
+    } catch (error) {
+        console.error('GetLocalFileData error:', error);
+        return { success: false, message: '파일 데이터를 불러오는 중 오류가 발생했습니다.' };
+    }
+}
+
+async function callSaveLocalFileData(userID: string, jsonData: string): Promise<any> {
+    try {
+        const { SaveLocalFileData } = await import('../wailsjs/go/main/App');
+        const result = await SaveLocalFileData(userID, jsonData);
+        return result;
+    } catch (error) {
+        console.error('SaveLocalFileData error:', error);
+        return { success: false, message: '파일 저장 중 오류가 발생했습니다.' };
+    }
+}
+
+// 파일 데이터 로드
+async function loadFileData(userID: string): Promise<void> {
+    try {
+        const result = await callGetLocalFileData(userID);
+        if (result.success) {
+            const textarea = document.getElementById('json-editor') as HTMLTextAreaElement;
+            if (textarea) {
+                textarea.value = result.data;
+                validateJSON();
+                // 실시간 유효성 검사 이벤트 리스너 추가
+                textarea.addEventListener('input', validateJSON);
+            }
+        } else {
+            showToast(result.message, 'error');
+        }
+    } catch (error) {
+        console.error('파일 데이터 로드 오류:', error);
+        showToast('파일 데이터를 불러오는 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+// JSON 유효성 검사
+function validateJSON(): void {
+    const textarea = document.getElementById('json-editor') as HTMLTextAreaElement;
+    const statusElement = document.getElementById('json-status-text');
+    const statusContainer = document.querySelector('.json-status');
+    
+    if (!textarea || !statusElement || !statusContainer) return;
+    
+    try {
+        const jsonText = textarea.value.trim();
+        if (jsonText === '') {
+            statusElement.textContent = 'JSON 데이터를 입력하세요';
+            statusContainer.className = 'json-status warning';
+            textarea.className = '';
+            return;
+        }
+        
+        JSON.parse(jsonText);
+        statusElement.textContent = 'JSON 형식이 올바릅니다';
+        statusContainer.className = 'json-status valid';
+        textarea.className = 'valid';
+    } catch (error) {
+        statusElement.textContent = `JSON 형식 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`;
+        statusContainer.className = 'json-status error';
+        textarea.className = 'error';
+    }
+}
+
+// JSON 포맷 정리
+function formatJSON(): void {
+    const textarea = document.getElementById('json-editor') as HTMLTextAreaElement;
+    if (!textarea) return;
+    
+    try {
+        const jsonText = textarea.value.trim();
+        if (jsonText === '') {
+            showToast('JSON 데이터가 없습니다.', 'warning');
+            return;
+        }
+        
+        const parsed = JSON.parse(jsonText);
+        const formatted = JSON.stringify(parsed, null, 2);
+        textarea.value = formatted;
+        validateJSON();
+        showToast('JSON 포맷이 정리되었습니다.', 'success');
+    } catch (error) {
+        showToast('잘못된 JSON 형식입니다.', 'error');
+        validateJSON();
+    }
+}
+
+// 파일 데이터 저장
+async function saveFileData(): Promise<void> {
+    const userID = sessionStorage.getItem('userID');
+    if (!userID) {
+        showToast('로그인이 필요합니다.', 'error');
+        return;
+    }
+    
+    const textarea = document.getElementById('json-editor') as HTMLTextAreaElement;
+    if (!textarea) return;
+    
+    try {
+        const jsonData = textarea.value.trim();
+        if (jsonData === '') {
+            showToast('저장할 JSON 데이터가 없습니다.', 'warning');
+            return;
+        }
+        
+        // JSON 유효성 검사
+        JSON.parse(jsonData);
+        
+        const result = await callSaveLocalFileData(userID, jsonData);
+        if (result.success) {
+            showToast('파일이 성공적으로 저장되었습니다.', 'success');
+            // 플랫폼과 주문 데이터 새로고침
+            const userInfo = await callGetUserInfo(userID);
+            if (userInfo.success && userInfo.user) {
+                displayUserInfo(userInfo.user);
+            }
+            await loadSellOrders(userID);
+        } else {
+            showToast(result.message, 'error');
+        }
+    } catch (error) {
+        showToast('잘못된 JSON 형식입니다.', 'error');
+        validateJSON();
+    }
+}
+
+// 토스트 메시지 표시
+function showToast(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
+    // 기존 토스트 제거
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    // 3초 후 자동 제거
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.remove();
+        }
+    }, 3000);
+}
+
 // Make functions globally available
 (window as any).handleLogin = handleLogin;
 (window as any).handleRegister = handleRegister;
@@ -1499,6 +1664,8 @@ document.addEventListener('keydown', function(e) {
 (window as any).closeSellOrderModal = closeSellOrderModal;
 (window as any).handleSellOrderSubmit = handleSellOrderSubmit;
 (window as any).toggleOrderDetail = toggleOrderDetail;
+(window as any).formatJSON = formatJSON;
+(window as any).saveFileData = saveFileData;
 
 (window as any).viewInModal = viewInModal;
 (window as any).closeLogModal = closeLogModal;

@@ -5,6 +5,7 @@ import (
 	"bitbit-app/platform"
 	"bitbit-app/user"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 )
@@ -96,6 +97,74 @@ func (a *App) GetPlatformInfo(userID string) map[string]interface{} {
 
 func (a *App) AddPlatform(userID string, platformName string, name string, accessKey, secretKey string) map[string]interface{} {
 	return a.platformHandler.AddPlatform(userID, platformName, name, accessKey, secretKey)
+}
+
+// 파일 관리 API 메서드들
+func (a *App) GetLocalFileData(userID string) map[string]interface{} {
+	userData := a.localFileHandler.GetUserData(userID)
+	if userData == nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "사용자 데이터를 찾을 수 없습니다.",
+		}
+	}
+
+	// JSON으로 변환
+	jsonData, err := json.MarshalIndent(userData, "", "  ")
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "JSON 변환 중 오류가 발생했습니다.",
+		}
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"data":    string(jsonData),
+	}
+}
+
+func (a *App) SaveLocalFileData(userID string, jsonData string) map[string]interface{} {
+	// JSON 파싱
+	var userData local_file.UserData
+	if err := json.Unmarshal([]byte(jsonData), &userData); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "잘못된 JSON 형식입니다.",
+		}
+	}
+
+	// 사용자 ID 검증
+	if userData.ID != userID {
+		return map[string]interface{}{
+			"success": false,
+			"message": "사용자 ID가 일치하지 않습니다.",
+		}
+	}
+
+	// 데이터 저장
+	if err := a.localFileHandler.SaveUserDataFromJSON(userID, jsonData); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "파일 저장 중 오류가 발생했습니다.",
+		}
+	}
+
+	// 기존 워커 삭제
+	a.platformHandler.RemoveAllWorkers()
+
+	// 새로운 워커 생성
+	if err := a.createWorkersForUser(userID, &userData); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "워커 재생성 중 오류가 발생했습니다: " + err.Error(),
+		}
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": "파일이 성공적으로 저장되었습니다.",
+	}
 }
 
 func (a *App) RemovePlatform(userID string, platformName string, name string) map[string]interface{} {
@@ -213,30 +282,76 @@ func (a *App) initializeWorkersForExistingUsers() {
 func (a *App) createWorkersForUser(userID string, userData *local_file.UserData) error {
 	log.Printf("사용자 워커 생성 시작: userID=%s, 주문 수=%d", userID, len(userData.SellOrderList))
 
+	// 디버깅을 위한 데이터 출력
+	log.Printf("사용자 데이터 - 플랫폼 키 수: %d", len(userData.PlatformKeyList))
+	for i, key := range userData.PlatformKeyList {
+		log.Printf("  플랫폼 키[%d]: %s/%s", i, key.PlatformName, key.Name)
+	}
+
+	log.Printf("사용자 데이터 - 주문 수: %d", len(userData.SellOrderList))
+	for i, order := range userData.SellOrderList {
+		log.Printf("  주문[%d]: %s (플랫폼: %s, 닉네임: %s)", i, order.Name, order.Platform, order.PlatformNickName)
+	}
+
+	// 플랫폼별 주문 그룹화
+	platformOrders := make(map[string][]local_file.SellOrder)
+	for _, order := range userData.SellOrderList {
+		platformOrders[order.Platform] = append(platformOrders[order.Platform], order)
+	}
+
+	log.Printf("플랫폼별 주문 분포:")
+	for platform, orders := range platformOrders {
+		log.Printf("  %s: %d개 주문", platform, len(orders))
+		for _, order := range orders {
+			log.Printf("    - %s (닉네임: %s)", order.Name, order.PlatformNickName)
+		}
+	}
+
 	createdCount := 0
 	failedCount := 0
 
 	// 각 매도 예약 주문에 대해 워커 생성
 	for _, order := range userData.SellOrderList {
+		log.Printf("주문 처리 시작: %s", order.Name)
+
 		// 플랫폼 키 찾기
 		var platformKey local_file.PlatformKey
 		found := false
+
+		log.Printf("  주문 '%s'의 플랫폼 키 검색: platform=%s, nickname=%s", order.Name, order.Platform, order.PlatformNickName)
+
 		for _, key := range userData.PlatformKeyList {
+			log.Printf("    키 비교: %s/%s vs %s/%s", key.PlatformName, key.Name, order.Platform, order.PlatformNickName)
 			if key.PlatformName == order.Platform && key.Name == order.PlatformNickName {
 				platformKey = key
 				found = true
+				log.Printf("    ✅ 플랫폼 키 찾음: %s/%s", key.PlatformName, key.Name)
 				break
 			}
 		}
 
 		if !found {
-			log.Printf("플랫폼 키를 찾을 수 없음: order=%s, platform=%s, nickname=%s",
+			log.Printf("❌ 플랫폼 키를 찾을 수 없음: order=%s, platform=%s, nickname=%s",
 				order.Name, order.Platform, order.PlatformNickName)
+			log.Printf("   전체 플랫폼 키 목록:")
+			for i, key := range userData.PlatformKeyList {
+				if key.PlatformName == order.Platform {
+					log.Printf("     ✅ %d. %s/%s (플랫폼 일치)", i+1, key.PlatformName, key.Name)
+				} else {
+					log.Printf("     ❌ %d. %s/%s (플랫폼 불일치)", i+1, key.PlatformName, key.Name)
+				}
+			}
+			log.Printf("   해결 방법:")
+			log.Printf("     1. 플랫폼 키의 'Name'을 '%s'로 변경하거나", order.PlatformNickName)
+			log.Printf("     2. 주문의 'PlatformNickName'을 실제 키 이름으로 변경")
 			failedCount++
 			continue
 		}
 
 		// 워커 생성 및 시작
+		log.Printf("워커 생성 시도: order=%s, platform=%s, accessKey=%s",
+			order.Name, order.Platform, platformKey.PlatformAccessKey[:10]+"...")
+
 		if err := a.platformHandler.CreateWorkerForOrder(order, userID, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey); err != nil {
 			log.Printf("워커 생성 실패: order=%s, error=%v", order.Name, err)
 			failedCount++

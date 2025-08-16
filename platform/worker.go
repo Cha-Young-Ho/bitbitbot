@@ -135,7 +135,10 @@ func (workerManager *WorkerManager) AddWorker(orderName string, userID string, w
 	workerManager.mu.Lock()
 	defer workerManager.mu.Unlock()
 
+	log.Printf("AddWorker 호출: orderName=%s, userID=%s", orderName, userID)
+
 	if _, exists := workerManager.workers[orderName]; exists {
+		log.Printf("워커가 이미 존재함: %s", orderName)
 		return fmt.Errorf("워커가 이미 존재합니다: %s", orderName)
 	}
 
@@ -153,6 +156,8 @@ func (workerManager *WorkerManager) AddWorker(orderName string, userID string, w
 
 	workerManager.workers[orderName] = worker
 	workerManager.workerInfo[orderName] = workerInfo
+
+	log.Printf("워커 추가 완료: orderName=%s, userID=%s", orderName, userID)
 
 	// 로그 수집 고루틴 시작
 	go workerManager.collectLogs(orderName)
@@ -186,11 +191,21 @@ func (workerManager *WorkerManager) StartWorker(orderName string) error {
 	worker, exists := workerManager.workers[orderName]
 	workerManager.mu.RUnlock()
 
+	log.Printf("StartWorker 호출: orderName=%s, exists=%v", orderName, exists)
+
 	if !exists {
+		log.Printf("워커를 찾을 수 없음: %s", orderName)
 		return fmt.Errorf("워커를 찾을 수 없습니다: %s", orderName)
 	}
 
-	return worker.Start(workerManager.ctx)
+	log.Printf("워커 시작 시도: %s", orderName)
+	err := worker.Start(workerManager.ctx)
+	if err != nil {
+		log.Printf("워커 시작 실패: %s, error=%v", orderName, err)
+	} else {
+		log.Printf("워커 시작 성공: %s", orderName)
+	}
+	return err
 }
 
 // StopWorker 특정 워커를 중지합니다
@@ -453,4 +468,23 @@ func (wm *WorkerManager) ClearWorkerLogs(orderName string) error {
 
 	workerInfo.Logs = []WorkerLog{}
 	return nil
+}
+
+// RemoveAllWorkers 모든 워커를 제거합니다
+func (wm *WorkerManager) RemoveAllWorkers() {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	// 모든 워커 중지
+	for orderName, worker := range wm.workers {
+		if worker != nil {
+			worker.Stop()
+		}
+		delete(wm.workers, orderName)
+	}
+
+	// 워커 정보 초기화
+	wm.workerInfo = make(map[string]*WorkerInfo)
+
+	log.Printf("모든 워커가 제거되었습니다")
 }

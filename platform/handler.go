@@ -1025,3 +1025,8 @@ func (h *Handler) GetUnifiedLogs(userID string) map[string]interface{} {
 		"count":   0,
 	}
 }
+
+// RemoveAllWorkers 모든 워커를 제거합니다
+func (h *Handler) RemoveAllWorkers() {
+	h.workerManager.RemoveAllWorkers()
+}
