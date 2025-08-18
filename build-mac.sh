@@ -58,10 +58,11 @@ fi
 
 echo "빌드 시작..."; echo "버전: $VERSION"; echo "설정 URL: $CONFIG_URL"; echo ""
 
-go build -ldflags="-X main.Version=$VERSION -X main.configUrl=$CONFIG_URL" -o bitbit-app
+# Wails 빌드 실행 (버전 및 설정 URL 주입)
+wails build -ldflags="-X main.Version=$VERSION -X main.configUrl=$CONFIG_URL"
 
 if [ $? -eq 0 ]; then
-    echo ""; echo "✅ 빌드 완료: bitbit-app"; echo "📁 파일 크기: $(ls -lh bitbit-app | awk '{print $5}')"; echo "🚀 exe 파일만 배포하면 됩니다. 설정이 내장되어 있습니다."
+    echo ""; echo "✅ 빌드 완료: build/bin/bitbit-app.app"; echo "📁 파일 크기: $(ls -lh build/bin/bitbit-app.app/Contents/MacOS/bitbit-app | awk '{print $5}')"; echo "🚀 앱 파일만 배포하면 됩니다. 설정이 내장되어 있습니다."
 else
     echo ""; echo "❌ 빌드 실패!"; exit 1
 fi 

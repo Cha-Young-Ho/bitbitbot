@@ -102,23 +102,30 @@ func checkUserAccess(userID string) error {
 		return fmt.Errorf("설정이 로드되지 않았습니다")
 	}
 
+	log.Printf("사용자 접근 검증 시작 - UserID: %s, Running: %s", userID, config.Running)
+
 	// Running이 "all"이면 모든 사용자 허용 (whiteList 검증 하지 않음)
 	if config.Running == "all" {
+		log.Printf("Running이 'all'이므로 모든 사용자 허용 - UserID: %s", userID)
 		return nil
 	}
 
 	// Running이 "on"일 때만 whiteList 체크
 	if config.Running == "on" {
+		log.Printf("Running이 'on'이므로 whiteList 검증 - UserID: %s, WhiteList: %v", userID, config.WhiteList)
 		// WhiteList 체크
 		for _, allowedID := range config.WhiteList {
 			if allowedID == userID {
+				log.Printf("whiteList 검증 성공 - UserID: %s", userID)
 				return nil
 			}
 		}
+		log.Printf("whiteList 검증 실패 - UserID: %s가 허용 목록에 없음", userID)
 		return fmt.Errorf("Invalid Account")
 	}
 
 	// Running이 "off"이면 접근 거부
+	log.Printf("Running이 'off'이므로 접근 거부 - UserID: %s", userID)
 	return fmt.Errorf("Invalid Account")
 }
 
