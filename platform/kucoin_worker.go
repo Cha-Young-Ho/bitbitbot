@@ -81,7 +81,7 @@ func (kw *KuCoinWorker) printStatus() {
 func (kw *KuCoinWorker) getCurrentPrice() (float64, error) {
 	// KuCoin API를 사용하여 현재가 조회
 	// TODO: 실제 KuCoin API 구현
-	return 0, fmt.Errorf("KuCoin API가 아직 구현되지 않았습니다")
+	return 0, fmt.Errorf("kucoin API가 아직 구현되지 않았습니다")
 }
 
 // executeSellOrder KuCoin에서 매도 주문을 실행합니다

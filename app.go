@@ -41,8 +41,7 @@ func NewApp() *App {
 	}
 }
 
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
+// startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
@@ -71,6 +70,14 @@ func (a *App) PlatformService() *platform.Handler {
 
 // User 관련 메서드들
 func (a *App) Login(userID, password string) map[string]interface{} {
+	// 3. 사용자가 로그인하면 S3의 whiteList에 해당 ID가 있는지 검증
+	if err := checkUserAccess(userID); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+
 	return a.userHandler.Login(userID, password)
 }
 

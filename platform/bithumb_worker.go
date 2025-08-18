@@ -27,7 +27,7 @@ func NewBithumbWorker(order local_file.SellOrder, manager *WorkerManager, access
 func (bw *BithumbWorker) getCurrentPrice() (float64, error) {
 	// Bithumb API를 사용하여 현재가 조회
 	// TODO: 실제 Bithumb API 구현
-	return 0, fmt.Errorf("Bithumb API가 아직 구현되지 않았습니다")
+	return 0, fmt.Errorf("bithumb API가 아직 구현되지 않았습니다")
 }
 
 // Start 워커를 시작합니다

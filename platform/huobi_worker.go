@@ -81,7 +81,7 @@ func (hw *HuobiWorker) printStatus() {
 func (hw *HuobiWorker) getCurrentPrice() (float64, error) {
 	// Huobi API를 사용하여 현재가 조회
 	// TODO: 실제 Huobi API 구현
-	return 0, fmt.Errorf("Huobi API가 아직 구현되지 않았습니다")
+	return 0, fmt.Errorf("huobi API가 아직 구현되지 않았습니다")
 }
 
 // executeSellOrder Huobi에서 매도 주문을 실행합니다

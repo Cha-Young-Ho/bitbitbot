@@ -124,10 +124,8 @@ async function callGetAllPlatforms(): Promise<any> {
 
 // Utility functions
 function showAlert(message: string, type: 'success' | 'error' = 'success'): void {
-    // Wails에서는 alert를 사용하지 않고 console.log로 대체
     console.log(`[${type.toUpperCase()}] ${message}`);
     
-    // 에러인 경우 alert로도 표시 (더 오래 보이도록)
     if (type === 'error') {
         alert(`[ERROR] ${message}`);
     }
