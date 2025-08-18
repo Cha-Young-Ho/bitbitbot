@@ -66,13 +66,14 @@ func (h *Handler) GetPlatformInfo(userID string) map[string]interface{} {
 }
 
 // AddPlatform 사용자에게 플랫폼을 추가합니다
-func (h *Handler) AddPlatform(userID string, platformName string, name string, accessKey, secretKey string) map[string]interface{} {
+func (h *Handler) AddPlatform(userID string, platformName string, name string, accessKey, secretKey, passwordPhrase string) map[string]interface{} {
 	// 입력값 정리
 	userID = strings.TrimSpace(userID)
 	platformName = strings.TrimSpace(platformName)
 	name = strings.TrimSpace(name)
 	accessKey = strings.TrimSpace(accessKey)
 	secretKey = strings.TrimSpace(secretKey)
+	passwordPhrase = strings.TrimSpace(passwordPhrase)
 
 	// 입력값 검증
 	if userID == "" {
@@ -121,6 +122,7 @@ func (h *Handler) AddPlatform(userID string, platformName string, name string, a
 		Name:              name,
 		PlatformAccessKey: accessKey,
 		PlatformSecretKey: secretKey,
+		PasswordPhrase:    passwordPhrase,
 	}
 
 	userData.PlatformKeyList = append(userData.PlatformKeyList, newPlatformKey)
@@ -210,7 +212,7 @@ func (h *Handler) RemovePlatform(userID string, platformName string, name string
 }
 
 // UpdatePlatform 사용자의 플랫폼 정보를 업데이트합니다
-func (h *Handler) UpdatePlatform(userID string, oldPlatformName string, oldName string, newPlatformName string, newName string, accessKey, secretKey string) map[string]interface{} {
+func (h *Handler) UpdatePlatform(userID string, oldPlatformName string, oldName string, newPlatformName string, newName string, accessKey, secretKey, passwordPhrase string) map[string]interface{} {
 	// 입력값 정리
 	userID = strings.TrimSpace(userID)
 	oldPlatformName = strings.TrimSpace(oldPlatformName)
@@ -219,6 +221,7 @@ func (h *Handler) UpdatePlatform(userID string, oldPlatformName string, oldName 
 	newName = strings.TrimSpace(newName)
 	accessKey = strings.TrimSpace(accessKey)
 	secretKey = strings.TrimSpace(secretKey)
+	passwordPhrase = strings.TrimSpace(passwordPhrase)
 
 	// 입력값 검증
 	if userID == "" || newPlatformName == "" || newName == "" {
@@ -247,6 +250,7 @@ func (h *Handler) UpdatePlatform(userID string, oldPlatformName string, oldName 
 				Name:              newName,
 				PlatformAccessKey: accessKey,
 				PlatformSecretKey: secretKey,
+				PasswordPhrase:    passwordPhrase,
 			}
 			found = true
 			break
@@ -260,6 +264,7 @@ func (h *Handler) UpdatePlatform(userID string, oldPlatformName string, oldName 
 			Name:              newName,
 			PlatformAccessKey: accessKey,
 			PlatformSecretKey: secretKey,
+			PasswordPhrase:    passwordPhrase,
 		}
 		userData.PlatformKeyList = append(userData.PlatformKeyList, newPlatformKey)
 	}
@@ -420,7 +425,7 @@ func (h *Handler) AddSellOrder(userID string, orderName string, symbol string, p
 		}
 	}
 	if found {
-		if err := h.CreateWorkerForOrder(newSellOrder, userID, pk.PlatformAccessKey, pk.PlatformSecretKey); err != nil {
+		if err := h.CreateWorkerForOrder(newSellOrder, userID, pk.PlatformAccessKey, pk.PlatformSecretKey, pk.PasswordPhrase); err != nil {
 			h.workerManager.SendSystemLog("Handler", "AddSellOrder", "워커 생성 실패", "error", userID, orderName, err.Error())
 		}
 	} else {
@@ -495,7 +500,7 @@ func (h *Handler) UpdateSellOrder(userID string, oldName string, orderName strin
 	if found {
 		// 새 워커 생성/시작은 사용자의 의도에 따라 다를 수 있어 선택적으로 수행
 		order := updated
-		if err := h.CreateWorkerForOrder(order, userID, pk.PlatformAccessKey, pk.PlatformSecretKey); err != nil {
+		if err := h.CreateWorkerForOrder(order, userID, pk.PlatformAccessKey, pk.PlatformSecretKey, pk.PasswordPhrase); err != nil {
 			h.workerManager.SendSystemLog("Handler", "UpdateSellOrder", "워커 재시작 실패", "error", userID, orderName, err.Error())
 		}
 	}
@@ -576,7 +581,7 @@ func (h *Handler) StartWorkerForOrder(userID string, orderName string) map[strin
 	}
 
 	// 워커 생성
-	worker, err := h.workerFactory.CreateWorker(targetOrder, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey)
+	worker, err := h.workerFactory.CreateWorker(targetOrder, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey, platformKey.PasswordPhrase)
 	if err != nil {
 		return map[string]interface{}{
 			"success": false,
@@ -600,7 +605,6 @@ func (h *Handler) StartWorkerForOrder(userID string, orderName string) map[strin
 		}
 	}
 
-	log.Printf("워커 시작 완료: userID=%s, orderName=%s, platform=%s", userID, orderName, targetOrder.Platform)
 	return map[string]interface{}{
 		"success": true,
 		"message": "워커가 시작되었습니다.",
@@ -635,7 +639,6 @@ func (h *Handler) StopWorkerForOrder(userID string, orderName string) map[string
 		}
 	}
 
-	log.Printf("워커 중지 완료: userID=%s, orderName=%s", userID, orderName)
 	return map[string]interface{}{
 		"success": true,
 		"message": "워커가 중지되었습니다.",
@@ -740,7 +743,7 @@ func (h *Handler) StartAllWorkersForUser(userID string) map[string]interface{} {
 		}
 
 		// 워커 생성
-		worker, err := h.workerFactory.CreateWorker(order, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey)
+		worker, err := h.workerFactory.CreateWorker(order, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey, platformKey.PasswordPhrase)
 		if err != nil {
 			failedCount++
 			continue
@@ -761,7 +764,6 @@ func (h *Handler) StartAllWorkersForUser(userID string) map[string]interface{} {
 		startedCount++
 	}
 
-	log.Printf("사용자 워커 시작 완료: userID=%s, 시작=%d, 실패=%d", userID, startedCount, failedCount)
 	return map[string]interface{}{
 		"success":      true,
 		"startedCount": startedCount,
@@ -784,7 +786,6 @@ func (h *Handler) StopAllWorkersForUser(userID string) map[string]interface{} {
 	// 모든 워커 중지
 	h.workerManager.StopAllWorkers()
 
-	log.Printf("사용자 워커 중지 완료: userID=%s", userID)
 	return map[string]interface{}{
 		"success": true,
 		"message": "모든 워커가 중지되었습니다.",
@@ -802,9 +803,9 @@ func (h *Handler) GetWorkerManager() *WorkerManager {
 }
 
 // CreateWorkerForOrder 주문에 대한 워커를 생성하고 시작합니다
-func (h *Handler) CreateWorkerForOrder(order local_file.SellOrder, userID string, accessKey, secretKey string) error {
+func (h *Handler) CreateWorkerForOrder(order local_file.SellOrder, userID string, accessKey, secretKey, passwordPhrase string) error {
 	// 워커 생성
-	worker, err := h.workerFactory.CreateWorker(order, accessKey, secretKey)
+	worker, err := h.workerFactory.CreateWorker(order, accessKey, secretKey, passwordPhrase)
 	if err != nil {
 		return err
 	}

@@ -18,6 +18,7 @@ interface PlatformKey {
     name: string;
     platformAccessKey: string;
     platformSecretKey: string;
+    passwordPhrase: string;
 }
 
 interface UserData {
@@ -77,10 +78,10 @@ async function callGetPlatformInfo(userID: string): Promise<any> {
     }
 }
 
-async function callAddPlatform(userID: string, platform: string, name: string, accessKey: string, secretKey: string): Promise<any> {
+async function callAddPlatform(userID: string, platform: string, name: string, accessKey: string, secretKey: string, passwordPhrase: string): Promise<any> {
     try {
         const { AddPlatform } = await import('../wailsjs/go/main/App');
-        const result = await AddPlatform(userID, platform, name, accessKey, secretKey);
+        const result = await AddPlatform(userID, platform, name, accessKey, secretKey, passwordPhrase);
         return result;
     } catch (error) {
         console.error('AddPlatform error:', error);
@@ -88,10 +89,10 @@ async function callAddPlatform(userID: string, platform: string, name: string, a
     }
 }
 
-async function callUpdatePlatform(userID: string, oldPlatform: string, oldName: string, newPlatform: string, newName: string, accessKey: string, secretKey: string): Promise<any> {
+async function callUpdatePlatform(userID: string, oldPlatform: string, oldName: string, newPlatform: string, newName: string, accessKey: string, secretKey: string, passwordPhrase: string): Promise<any> {
     try {
         const { UpdatePlatform } = await import('../wailsjs/go/main/App');
-        const result = await UpdatePlatform(userID, oldPlatform, oldName, newPlatform, newName, accessKey, secretKey);
+        const result = await UpdatePlatform(userID, oldPlatform, oldName, newPlatform, newName, accessKey, secretKey, passwordPhrase);
         return result;
     } catch (error) {
         console.error('UpdatePlatform error:', error);
@@ -329,7 +330,7 @@ function displayUserInfo(data: UserData): void {
                             <span class="platform-alias">${platform.name}</span>
                         </div>
                         <div class="platform-actions">
-                            <button class="btn btn-secondary" onclick="showEditPlatformModal('${platform.platformName}', '${platform.name}', '${platform.platformAccessKey}', '${platform.platformSecretKey}')">
+                            <button class="btn btn-secondary" onclick="showEditPlatformModal('${platform.platformName}', '${platform.name}', '${platform.platformAccessKey}', '${platform.platformSecretKey}', '${platform.passwordPhrase || ''}')">
                                 수정
                             </button>
                             <button class="btn btn-secondary" onclick="removePlatform('${platform.platformName}', '${platform.name}')">
@@ -345,6 +346,10 @@ function displayUserInfo(data: UserData): void {
                         <div class="platform-detail">
                             <div class="platform-detail-label">Secret Key</div>
                             <div class="platform-detail-value">${platform.platformSecretKey}</div>
+                        </div>
+                        <div class="platform-detail">
+                            <div class="platform-detail-label">Password Phrase</div>
+                            <div class="platform-detail-value">${platform.passwordPhrase || '설정되지 않음'}</div>
                         </div>
                     </div>
                 `;
@@ -436,18 +441,20 @@ function showAddPlatformModal(): void {
     document.getElementById('platform-modal')!.classList.add('active');
 }
 
-function showEditPlatformModal(platformName: string, name: string, accessKey: string, secretKey: string): void {
+function showEditPlatformModal(platformName: string, name: string, accessKey: string, secretKey: string, passwordPhrase: string): void {
     // HTML 엔티티 디코딩
     const decodedPlatformName = platformName.replace(/&apos;/g, "'");
     const decodedName = name.replace(/&apos;/g, "'");
     const decodedAccessKey = accessKey.replace(/&apos;/g, "'");
     const decodedSecretKey = secretKey.replace(/&apos;/g, "'");
+    const decodedPasswordPhrase = passwordPhrase.replace(/&apos;/g, "'");
     
     currentEditingPlatform = { 
         platformName: decodedPlatformName, 
         name: decodedName, 
         platformAccessKey: decodedAccessKey, 
-        platformSecretKey: decodedSecretKey 
+        platformSecretKey: decodedSecretKey,
+        passwordPhrase: decodedPasswordPhrase
     };
     document.getElementById('modal-title')!.textContent = '플랫폼 수정';
     document.getElementById('platform-submit-btn')!.textContent = '수정';
@@ -458,6 +465,7 @@ function showEditPlatformModal(platformName: string, name: string, accessKey: st
     (form.querySelector('[name="name"]') as HTMLInputElement).value = decodedName;
     (form.querySelector('[name="accessKey"]') as HTMLInputElement).value = decodedAccessKey;
     (form.querySelector('[name="secretKey"]') as HTMLInputElement).value = decodedSecretKey;
+    (form.querySelector('[name="passwordPhrase"]') as HTMLInputElement).value = decodedPasswordPhrase;
     
     document.getElementById('platform-modal')!.classList.add('active');
 }
@@ -480,6 +488,7 @@ async function handlePlatformSubmit(event: Event): Promise<void> {
     const name = formData.get('name') as string;
     const accessKey = formData.get('accessKey') as string;
     const secretKey = formData.get('secretKey') as string;
+    const passwordPhrase = formData.get('passwordPhrase') as string;
     
     // 입력값 검증
     if (!platformName || !name || !accessKey || !secretKey) {
@@ -507,11 +516,12 @@ async function handlePlatformSubmit(event: Event): Promise<void> {
                 platformName,                        // 새 플랫폼명
                 name,                                // 새 별칭
                 accessKey, 
-                secretKey
+                secretKey,
+                passwordPhrase
             );
         } else {
             // 추가 모드
-            result = await callAddPlatform(userID, platformName, name, accessKey, secretKey);
+            result = await callAddPlatform(userID, platformName, name, accessKey, secretKey, passwordPhrase);
         }
         
         if (result.success) {
@@ -1021,8 +1031,10 @@ function addLogToOrder(orderName: string, log: any): void {
     logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
     logContainer.appendChild(logEntry);
     
-    // 자동 스크롤
-    logContainer.scrollTop = logContainer.scrollHeight;
+    // 자동 스크롤 (사용자가 스크롤을 올리지 않았을 때만)
+    if (logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10) {
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
     
     // 최대 20개 로그만 유지
     const logEntries = logContainer.querySelectorAll('.log-entry');
@@ -1052,8 +1064,10 @@ function addLogToGrid(orderName: string, log: any): void {
     
     console.log('그리드 로그 엔트리 추가됨:', logEntry.innerHTML);
     
-    // 자동 스크롤
-    gridLogContainer.scrollTop = gridLogContainer.scrollHeight;
+    // 자동 스크롤 (사용자가 스크롤을 올리지 않았을 때만)
+    if (gridLogContainer.scrollTop + gridLogContainer.clientHeight >= gridLogContainer.scrollHeight - 10) {
+        gridLogContainer.scrollTop = gridLogContainer.scrollHeight;
+    }
     
     // 최대 50개 로그만 유지
     const logEntries = gridLogContainer.querySelectorAll('.log-entry');
@@ -1071,7 +1085,11 @@ function addSystemLog(log: { timestamp: Date | string | number; message: string;
     const ts = new Date(log.timestamp).toLocaleTimeString();
     logEntry.innerHTML = `<span class="timestamp">[${ts}]</span> ${log.message}`;
     systemLogContainer.appendChild(logEntry);
-    systemLogContainer.scrollTop = systemLogContainer.scrollHeight;
+    
+    // 자동 스크롤 (사용자가 스크롤을 올리지 않았을 때만)
+    if (systemLogContainer.scrollTop + systemLogContainer.clientHeight >= systemLogContainer.scrollHeight - 10) {
+        systemLogContainer.scrollTop = systemLogContainer.scrollHeight;
+    }
     const logEntries = systemLogContainer.querySelectorAll('.system-log-entry');
     if (logEntries.length > 100) logEntries[0].remove();
 }
@@ -1100,8 +1118,10 @@ function displayModalLogs(logs: any[]): void {
         logContent.appendChild(logEntry);
     });
     
-    // 자동 스크롤
-    logContent.scrollTop = logContent.scrollHeight;
+    // 자동 스크롤 (사용자가 스크롤을 올리지 않았을 때만)
+    if (logContent.scrollTop + logContent.clientHeight >= logContent.scrollHeight - 10) {
+        logContent.scrollTop = logContent.scrollHeight;
+    }
 }
 
 // 예약 매도 요소 생성

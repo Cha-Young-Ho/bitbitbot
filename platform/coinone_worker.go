@@ -27,7 +27,7 @@ type CoinoneWorker struct {
 }
 
 // NewCoinoneWorker 새로운 Coinone 워커를 생성합니다
-func NewCoinoneWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *CoinoneWorker {
+func NewCoinoneWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *CoinoneWorker {
 	// CCXT는 생성만 하고 사용하지 않음 (코인원은 직접 HTTP API 사용)
 	config := map[string]interface{}{
 		"apiKey":          accessKey,
@@ -37,7 +37,7 @@ func NewCoinoneWorker(order local_file.SellOrder, manager *WorkerManager, access
 	_ = ccxt.NewCoinone(config) // 생성만 하고 사용하지 않음
 
 	return &CoinoneWorker{
-		BaseWorker: NewBaseWorker(order, manager), // CCXT 없이 생성
+		BaseWorker: NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase), // CCXT 없이 생성
 		accessKey:  accessKey,
 		secretKey:  secretKey,
 		url:        "https://api.coinone.co.kr/v2.1/order",

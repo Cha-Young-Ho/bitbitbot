@@ -28,9 +28,9 @@ type UpbitWorker struct {
 }
 
 // NewUpbitWorker 새로운 Upbit 워커를 생성합니다
-func NewUpbitWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *UpbitWorker {
+func NewUpbitWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *UpbitWorker {
 	return &UpbitWorker{
-		BaseWorker: NewBaseWorker(order, manager),
+		BaseWorker: NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase),
 		accessKey:  accessKey,
 		secretKey:  secretKey,
 		url:        "https://api.upbit.com/v1/orders",
@@ -53,8 +53,6 @@ func (uw *UpbitWorker) Start(ctx context.Context) error {
 
 	// 워커 고루틴 시작
 	go uw.run()
-
-	uw.manager.SendSystemLog("UpbitWorker", "Start", "Upbit 워커 시작", "info", "", uw.order.Name, "")
 	return nil
 }
 
@@ -151,8 +149,15 @@ func (uw *UpbitWorker) executeSellOrder(price float64) {
 		fmt.Println("[UpbitWorker]", errMsg)
 		// 시스템 로그
 		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", errMsg, "error", "", uw.order.Name, "")
+		// 워커 로그에도 실패 메시지 추가
+		uw.sendLog(errMsg, "error", price, uw.order.Quantity)
 		return
 	}
+
+	// 성공 시 응답 내용 로그
+	successMsg := fmt.Sprintf("주문 성공 (status=%d): %v", resp.StatusCode, respBody)
+	fmt.Println("[UpbitWorker]", successMsg)
+	uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", successMsg, "info", "", uw.order.Name, "")
 	uw.sendLog("Upbit 지정가 매도 주문이 접수되었습니다", "success")
 }
 

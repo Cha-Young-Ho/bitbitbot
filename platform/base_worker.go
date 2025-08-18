@@ -11,20 +11,26 @@ import (
 
 // BaseWorker 기본 워커 구현체
 type BaseWorker struct {
-	order     local_file.SellOrder
-	manager   *WorkerManager
-	status    WorkerStatus
-	mu        sync.RWMutex
-	ctx       context.Context
-	cancel    context.CancelFunc
-	isRunning bool
+	order          local_file.SellOrder
+	manager        *WorkerManager
+	status         WorkerStatus
+	mu             sync.RWMutex
+	ctx            context.Context
+	cancel         context.CancelFunc
+	isRunning      bool
+	accessKey      string
+	secretKey      string
+	passwordPhrase string
 }
 
 // NewBaseWorker 새로운 기본 워커를 생성합니다
-func NewBaseWorker(order local_file.SellOrder, manager *WorkerManager) *BaseWorker {
+func NewBaseWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *BaseWorker {
 	return &BaseWorker{
-		order:   order,
-		manager: manager,
+		order:          order,
+		manager:        manager,
+		accessKey:      accessKey,
+		secretKey:      secretKey,
+		passwordPhrase: passwordPhrase,
 		status: WorkerStatus{
 			IsRunning:  false,
 			LastCheck:  time.Time{},
@@ -51,8 +57,6 @@ func (bw *BaseWorker) Start(ctx context.Context) error {
 
 	// 워커 고루틴 시작
 	go bw.run()
-
-	log.Printf("워커 시작: %s (%s)", bw.order.Name, bw.order.Platform)
 	return nil
 }
 
@@ -71,8 +75,6 @@ func (bw *BaseWorker) Stop() error {
 
 	bw.isRunning = false
 	bw.status.IsRunning = false
-
-	log.Printf("워커 중지: %s (%s)", bw.order.Name, bw.order.Platform)
 	return nil
 }
 

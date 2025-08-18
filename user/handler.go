@@ -156,24 +156,19 @@ func (h *Handler) createWorkersForUser(userID string, userData *local_file.UserD
 		}
 
 		if !found {
-			log.Printf("플랫폼 키를 찾을 수 없음: order=%s, platform=%s, nickname=%s",
-				order.Name, order.Platform, order.PlatformNickName)
 			failedCount++
 			continue
 		}
 
 		// 워커 생성 및 시작
-		if err := h.platformHandler.CreateWorkerForOrder(order, userID, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey); err != nil {
+		if err := h.platformHandler.CreateWorkerForOrder(order, userID, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey, platformKey.PasswordPhrase); err != nil {
 			log.Printf("워커 생성 실패: order=%s, error=%v", order.Name, err)
 			failedCount++
 			continue
 		}
 
-		log.Printf("워커 생성 및 시작 완료: order=%s, platform=%s", order.Name, order.Platform)
 		createdCount++
 	}
-
-	log.Printf("사용자 워커 생성 완료: userID=%s, 생성=%d, 실패=%d", userID, createdCount, failedCount)
 
 	if failedCount > 0 {
 		return fmt.Errorf("일부 워커 생성 실패: %d개", failedCount)
@@ -195,8 +190,6 @@ func (h *Handler) Logout(userID string) map[string]interface{} {
 
 	// 로그아웃 시 사용자의 모든 워커 중지
 	go h.stopWorkersForUser(userID)
-
-	log.Printf("로그아웃: userID=%s", userID)
 	return map[string]interface{}{
 		"success": true,
 		"message": "로그아웃 성공",
@@ -205,8 +198,6 @@ func (h *Handler) Logout(userID string) map[string]interface{} {
 
 // stopWorkersForUser 사용자의 모든 워커를 중지합니다
 func (h *Handler) stopWorkersForUser(userID string) {
-	log.Printf("사용자 워커 중지 시작: userID=%s", userID)
-
 	// 모든 워커 중지
 	h.platformHandler.GetWorkerManager().StopAllWorkers()
 	// 메모리 정리: 해당 사용자의 워커 인덱스 제거
@@ -215,6 +206,4 @@ func (h *Handler) stopWorkersForUser(userID string) {
 	for orderName := range info {
 		_ = wm.RemoveWorker(orderName)
 	}
-
-	log.Printf("사용자 워커 중지 완료: userID=%s", userID)
 }

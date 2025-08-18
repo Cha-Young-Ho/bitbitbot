@@ -135,10 +135,7 @@ func (workerManager *WorkerManager) AddWorker(orderName string, userID string, w
 	workerManager.mu.Lock()
 	defer workerManager.mu.Unlock()
 
-	log.Printf("AddWorker 호출: orderName=%s, userID=%s", orderName, userID)
-
 	if _, exists := workerManager.workers[orderName]; exists {
-		log.Printf("워커가 이미 존재함: %s", orderName)
 		return fmt.Errorf("워커가 이미 존재합니다: %s", orderName)
 	}
 
@@ -156,8 +153,6 @@ func (workerManager *WorkerManager) AddWorker(orderName string, userID string, w
 
 	workerManager.workers[orderName] = worker
 	workerManager.workerInfo[orderName] = workerInfo
-
-	log.Printf("워커 추가 완료: orderName=%s, userID=%s", orderName, userID)
 
 	// 로그 수집 고루틴 시작
 	go workerManager.collectLogs(orderName)
@@ -177,7 +172,7 @@ func (workerManager *WorkerManager) RemoveWorker(orderName string) error {
 
 	// 워커 중지
 	if err := worker.Stop(); err != nil {
-		log.Printf("워커 중지 실패: %v", err)
+		// 에러 로그는 유지
 	}
 
 	delete(workerManager.workers, orderName)
@@ -191,19 +186,13 @@ func (workerManager *WorkerManager) StartWorker(orderName string) error {
 	worker, exists := workerManager.workers[orderName]
 	workerManager.mu.RUnlock()
 
-	log.Printf("StartWorker 호출: orderName=%s, exists=%v", orderName, exists)
-
 	if !exists {
-		log.Printf("워커를 찾을 수 없음: %s", orderName)
 		return fmt.Errorf("워커를 찾을 수 없습니다: %s", orderName)
 	}
 
-	log.Printf("워커 시작 시도: %s", orderName)
 	err := worker.Start(workerManager.ctx)
 	if err != nil {
 		log.Printf("워커 시작 실패: %s, error=%v", orderName, err)
-	} else {
-		log.Printf("워커 시작 성공: %s", orderName)
 	}
 	return err
 }
@@ -246,7 +235,7 @@ func (workerManager *WorkerManager) RegisterWebSocketClient(userID string, clien
 	defer workerManager.wsClientsMu.Unlock()
 
 	workerManager.wsClients[userID] = client
-	log.Printf("웹소켓 클라이언트 등록: %s", userID)
+
 }
 
 // UnregisterWebSocketClient 웹소켓 클라이언트를 등록 해제합니다
@@ -256,7 +245,7 @@ func (workerManager *WorkerManager) UnregisterWebSocketClient(userID string, cli
 
 	if existingClient, exists := workerManager.wsClients[userID]; exists && existingClient == client {
 		delete(workerManager.wsClients, userID)
-		log.Printf("웹소켓 클라이언트 등록 해제: %s", userID)
+
 	}
 }
 

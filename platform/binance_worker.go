@@ -4,7 +4,6 @@ import (
 	"bitbit-app/local_file"
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -20,18 +19,25 @@ type BinanceWorker struct {
 }
 
 // NewBinanceWorker 새로운 Binance 워커를 생성합니다
-func NewBinanceWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *BinanceWorker {
+func NewBinanceWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *BinanceWorker {
 	// CCXT 거래소 인스턴스 생성
-	exchange := ccxt.CreateExchange("binance", map[string]interface{}{
+	exchangeConfig := map[string]interface{}{
 		"apiKey":          accessKey,
 		"secret":          secretKey,
 		"timeout":         30000, // 30초
 		"sandbox":         false, // 실제 거래
 		"enableRateLimit": true,
-	})
+	}
 
-	// BaseWorker 생성 (exchange는 nil로 전달)
-	baseWorker := NewBaseWorker(order, manager)
+	// Password Phrase가 있으면 추가
+	if passwordPhrase != "" {
+		exchangeConfig["password"] = passwordPhrase
+	}
+
+	exchange := ccxt.CreateExchange("binance", exchangeConfig)
+
+	// BaseWorker 생성
+	baseWorker := NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase)
 
 	return &BinanceWorker{
 		BaseWorker: baseWorker,
@@ -56,8 +62,6 @@ func (bw *BinanceWorker) Start(ctx context.Context) error {
 
 	// 워커 고루틴 시작 (바이낸스 자체 run 사용)
 	go bw.run()
-
-	log.Printf("Binance 워커 시작: %s", bw.order.Name)
 	return nil
 }
 

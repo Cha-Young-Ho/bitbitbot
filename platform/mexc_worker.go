@@ -4,7 +4,6 @@ import (
 	"bitbit-app/local_file"
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -20,18 +19,25 @@ type MexcWorker struct {
 }
 
 // NewMexcWorker 새로운 Mexc 워커를 생성합니다
-func NewMexcWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *MexcWorker {
+func NewMexcWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *MexcWorker {
 	// CCXT 거래소 인스턴스 생성
-	exchange := ccxt.CreateExchange("mexc", map[string]interface{}{
+	exchangeConfig := map[string]interface{}{
 		"apiKey":          accessKey,
 		"secret":          secretKey,
 		"timeout":         30000, // 30초
 		"sandbox":         false, // 실제 거래
 		"enableRateLimit": true,
-	})
+	}
 
-	// BaseWorker 생성 (exchange는 nil로 전달)
-	baseWorker := NewBaseWorker(order, manager)
+	// Password Phrase가 있으면 추가
+	if passwordPhrase != "" {
+		exchangeConfig["password"] = passwordPhrase
+	}
+
+	exchange := ccxt.CreateExchange("mexc", exchangeConfig)
+
+	// BaseWorker 생성
+	baseWorker := NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase)
 
 	return &MexcWorker{
 		BaseWorker: baseWorker,
@@ -56,8 +62,6 @@ func (mw *MexcWorker) Start(ctx context.Context) error {
 
 	// 워커 고루틴 시작 (Mexc 자체 run 사용)
 	go mw.run()
-
-	log.Printf("Mexc 워커 시작: %s", mw.order.Name)
 	return nil
 }
 

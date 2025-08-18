@@ -4,7 +4,6 @@ import (
 	"bitbit-app/local_file"
 	"context"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -16,9 +15,9 @@ type KuCoinWorker struct {
 }
 
 // NewKuCoinWorker 새로운 KuCoin 워커를 생성합니다
-func NewKuCoinWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *KuCoinWorker {
+func NewKuCoinWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *KuCoinWorker {
 	return &KuCoinWorker{
-		BaseWorker: NewBaseWorker(order, manager),
+		BaseWorker: NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase),
 		accessKey:  accessKey,
 		secretKey:  secretKey,
 	}
@@ -39,8 +38,6 @@ func (kw *KuCoinWorker) Start(ctx context.Context) error {
 
 	// 워커 고루틴 시작
 	go kw.run()
-
-	log.Printf("KuCoin 워커 시작: %s", kw.order.Name)
 	return nil
 }
 

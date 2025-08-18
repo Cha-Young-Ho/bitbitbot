@@ -95,8 +95,8 @@ func (a *App) GetPlatformInfo(userID string) map[string]interface{} {
 	return a.platformHandler.GetPlatformInfo(userID)
 }
 
-func (a *App) AddPlatform(userID string, platformName string, name string, accessKey, secretKey string) map[string]interface{} {
-	return a.platformHandler.AddPlatform(userID, platformName, name, accessKey, secretKey)
+func (a *App) AddPlatform(userID string, platformName string, name string, accessKey, secretKey, passwordPhrase string) map[string]interface{} {
+	return a.platformHandler.AddPlatform(userID, platformName, name, accessKey, secretKey, passwordPhrase)
 }
 
 // 파일 관리 API 메서드들
@@ -171,8 +171,8 @@ func (a *App) RemovePlatform(userID string, platformName string, name string) ma
 	return a.platformHandler.RemovePlatform(userID, platformName, name)
 }
 
-func (a *App) UpdatePlatform(userID string, oldPlatformName string, oldName string, newPlatformName string, newName string, accessKey, secretKey string) map[string]interface{} {
-	return a.platformHandler.UpdatePlatform(userID, oldPlatformName, oldName, newPlatformName, newName, accessKey, secretKey)
+func (a *App) UpdatePlatform(userID string, oldPlatformName string, oldName string, newPlatformName string, newName string, accessKey, secretKey, passwordPhrase string) map[string]interface{} {
+	return a.platformHandler.UpdatePlatform(userID, oldPlatformName, oldName, newPlatformName, newName, accessKey, secretKey, passwordPhrase)
 }
 
 func (a *App) GetAllPlatforms() map[string]interface{} {
@@ -256,12 +256,9 @@ func (a *App) ClearWorkerLogsByOrderName(userID string, orderName string) map[st
 
 // initializeWorkersForExistingUsers 앱 시작 시 기존 사용자들의 워커를 생성합니다
 func (a *App) initializeWorkersForExistingUsers() {
-	log.Printf("기존 사용자 워커 초기화 시작")
-
 	// 모든 사용자 조회
 	users := a.localFileHandler.GetAllUsers()
 
-	initializedCount := 0
 	failedCount := 0
 
 	for _, user := range users {
@@ -269,100 +266,39 @@ func (a *App) initializeWorkersForExistingUsers() {
 		if err := a.createWorkersForUser(user.ID, &user); err != nil {
 			log.Printf("사용자 워커 초기화 실패: userID=%s, error=%v", user.ID, err)
 			failedCount++
-		} else {
-			log.Printf("사용자 워커 초기화 완료: userID=%s", user.ID)
-			initializedCount++
 		}
 	}
-
-	log.Printf("기존 사용자 워커 초기화 완료: 성공=%d, 실패=%d", initializedCount, failedCount)
 }
 
 // createWorkersForUser 사용자의 모든 매도 예약 주문에 대한 워커를 생성합니다
 func (a *App) createWorkersForUser(userID string, userData *local_file.UserData) error {
-	log.Printf("사용자 워커 생성 시작: userID=%s, 주문 수=%d", userID, len(userData.SellOrderList))
-
-	// 디버깅을 위한 데이터 출력
-	log.Printf("사용자 데이터 - 플랫폼 키 수: %d", len(userData.PlatformKeyList))
-	for i, key := range userData.PlatformKeyList {
-		log.Printf("  플랫폼 키[%d]: %s/%s", i, key.PlatformName, key.Name)
-	}
-
-	log.Printf("사용자 데이터 - 주문 수: %d", len(userData.SellOrderList))
-	for i, order := range userData.SellOrderList {
-		log.Printf("  주문[%d]: %s (플랫폼: %s, 닉네임: %s)", i, order.Name, order.Platform, order.PlatformNickName)
-	}
-
-	// 플랫폼별 주문 그룹화
-	platformOrders := make(map[string][]local_file.SellOrder)
-	for _, order := range userData.SellOrderList {
-		platformOrders[order.Platform] = append(platformOrders[order.Platform], order)
-	}
-
-	log.Printf("플랫폼별 주문 분포:")
-	for platform, orders := range platformOrders {
-		log.Printf("  %s: %d개 주문", platform, len(orders))
-		for _, order := range orders {
-			log.Printf("    - %s (닉네임: %s)", order.Name, order.PlatformNickName)
-		}
-	}
-
-	createdCount := 0
 	failedCount := 0
 
 	// 각 매도 예약 주문에 대해 워커 생성
 	for _, order := range userData.SellOrderList {
-		log.Printf("주문 처리 시작: %s", order.Name)
-
 		// 플랫폼 키 찾기
 		var platformKey local_file.PlatformKey
 		found := false
 
-		log.Printf("  주문 '%s'의 플랫폼 키 검색: platform=%s, nickname=%s", order.Name, order.Platform, order.PlatformNickName)
-
 		for _, key := range userData.PlatformKeyList {
-			log.Printf("    키 비교: %s/%s vs %s/%s", key.PlatformName, key.Name, order.Platform, order.PlatformNickName)
 			if key.PlatformName == order.Platform && key.Name == order.PlatformNickName {
 				platformKey = key
 				found = true
-				log.Printf("    ✅ 플랫폼 키 찾음: %s/%s", key.PlatformName, key.Name)
 				break
 			}
 		}
 
 		if !found {
-			log.Printf("❌ 플랫폼 키를 찾을 수 없음: order=%s, platform=%s, nickname=%s",
-				order.Name, order.Platform, order.PlatformNickName)
-			log.Printf("   전체 플랫폼 키 목록:")
-			for i, key := range userData.PlatformKeyList {
-				if key.PlatformName == order.Platform {
-					log.Printf("     ✅ %d. %s/%s (플랫폼 일치)", i+1, key.PlatformName, key.Name)
-				} else {
-					log.Printf("     ❌ %d. %s/%s (플랫폼 불일치)", i+1, key.PlatformName, key.Name)
-				}
-			}
-			log.Printf("   해결 방법:")
-			log.Printf("     1. 플랫폼 키의 'Name'을 '%s'로 변경하거나", order.PlatformNickName)
-			log.Printf("     2. 주문의 'PlatformNickName'을 실제 키 이름으로 변경")
 			failedCount++
 			continue
 		}
 
-		// 워커 생성 및 시작
-		log.Printf("워커 생성 시도: order=%s, platform=%s, accessKey=%s",
-			order.Name, order.Platform, platformKey.PlatformAccessKey[:10]+"...")
-
-		if err := a.platformHandler.CreateWorkerForOrder(order, userID, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey); err != nil {
+		if err := a.platformHandler.CreateWorkerForOrder(order, userID, platformKey.PlatformAccessKey, platformKey.PlatformSecretKey, platformKey.PasswordPhrase); err != nil {
 			log.Printf("워커 생성 실패: order=%s, error=%v", order.Name, err)
 			failedCount++
 			continue
 		}
-
-		log.Printf("워커 생성 및 시작 완료: order=%s, platform=%s", order.Name, order.Platform)
-		createdCount++
 	}
-
-	log.Printf("사용자 워커 생성 완료: userID=%s, 생성=%d, 실패=%d", userID, createdCount, failedCount)
 
 	if failedCount > 0 {
 		return fmt.Errorf("일부 워커 생성 실패: %d개", failedCount)

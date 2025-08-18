@@ -26,7 +26,7 @@ type KorbitWorker struct {
 }
 
 // NewKorbitWorker 새로운 Korbit 워커를 생성합니다
-func NewKorbitWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *KorbitWorker {
+func NewKorbitWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *KorbitWorker {
 	// CCXT는 생성만 하고 사용하지 않음 (코빗은 직접 HTTP API 사용)
 	config := map[string]interface{}{
 		"apiKey":          accessKey,
@@ -36,7 +36,7 @@ func NewKorbitWorker(order local_file.SellOrder, manager *WorkerManager, accessK
 	_ = ccxt.CreateExchange("korbit", config) // 생성만 하고 사용하지 않음
 
 	return &KorbitWorker{
-		BaseWorker: NewBaseWorker(order, manager), // CCXT 없이 생성
+		BaseWorker: NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase), // CCXT 없이 생성
 		accessKey:  accessKey,
 		secretKey:  secretKey,
 		url:        "https://api.korbit.co.kr/v2/orders",

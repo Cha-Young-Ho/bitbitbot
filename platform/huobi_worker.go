@@ -4,7 +4,6 @@ import (
 	"bitbit-app/local_file"
 	"context"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -16,9 +15,9 @@ type HuobiWorker struct {
 }
 
 // NewHuobiWorker 새로운 Huobi 워커를 생성합니다
-func NewHuobiWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *HuobiWorker {
+func NewHuobiWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *HuobiWorker {
 	return &HuobiWorker{
-		BaseWorker: NewBaseWorker(order, manager),
+		BaseWorker: NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase),
 		accessKey:  accessKey,
 		secretKey:  secretKey,
 	}
@@ -39,8 +38,6 @@ func (hw *HuobiWorker) Start(ctx context.Context) error {
 
 	// 워커 고루틴 시작
 	go hw.run()
-
-	log.Printf("Huobi 워커 시작: %s", hw.order.Name)
 	return nil
 }
 

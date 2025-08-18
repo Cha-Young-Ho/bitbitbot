@@ -4,7 +4,6 @@ import (
 	"bitbit-app/local_file"
 	"context"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -16,9 +15,9 @@ type BithumbWorker struct {
 }
 
 // NewBithumbWorker 새로운 Bithumb 워커를 생성합니다
-func NewBithumbWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey string) *BithumbWorker {
+func NewBithumbWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *BithumbWorker {
 	return &BithumbWorker{
-		BaseWorker: NewBaseWorker(order, manager),
+		BaseWorker: NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase),
 		accessKey:  accessKey,
 		secretKey:  secretKey,
 	}
@@ -46,8 +45,6 @@ func (bw *BithumbWorker) Start(ctx context.Context) error {
 
 	// 워커 고루틴 시작
 	go bw.run()
-
-	log.Printf("Bithumb 워커 시작: %s", bw.order.Name)
 	return nil
 }
 

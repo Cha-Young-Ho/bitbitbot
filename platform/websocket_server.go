@@ -54,7 +54,6 @@ func (ws *WebSocketServer) Start() error {
 		Handler: mux,
 	}
 
-	log.Printf("웹소켓 서버 시작: :%s", ws.port)
 	return ws.server.ListenAndServe()
 }
 
@@ -101,8 +100,6 @@ func (ws *WebSocketServer) handleWebSocket(w http.ResponseWriter, r *http.Reques
 	ws.clientsMu.Lock()
 	ws.clients[clientID] = client
 	ws.clientsMu.Unlock()
-
-	log.Printf("새로운 웹소켓 클라이언트 연결: %s (사용자: %s)", clientID, userID)
 
 	// 클라이언트 고루틴 시작
 	go client.readPump()
@@ -222,7 +219,6 @@ func (ws *WebSocketServer) unregisterClient(client *Client) {
 	// 워커 매니저에서 클라이언트 제거
 	ws.workerMgr.UnregisterWebSocketClient(client.UserID, client)
 
-	log.Printf("웹소켓 클라이언트 연결 해제: %s (사용자: %s)", client.ID, client.UserID)
 }
 
 // BroadcastToUser 특정 사용자에게 메시지를 브로드캐스트합니다

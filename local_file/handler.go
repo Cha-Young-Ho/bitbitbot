@@ -102,6 +102,7 @@ type PlatformKey struct {
 	Name              string `json:"name"`
 	PlatformAccessKey string `json:"platformAccessKey"`
 	PlatformSecretKey string `json:"platformSecretKey"`
+	PasswordPhrase    string `json:"passwordPhrase"`
 }
 
 func NewHandler() *Handler {

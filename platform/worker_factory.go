@@ -19,38 +19,40 @@ func NewWorkerFactory(manager *WorkerManager) *WorkerFactory {
 }
 
 // CreateWorker 플랫폼에 따라 적절한 워커를 생성합니다
-func (wf *WorkerFactory) CreateWorker(order local_file.SellOrder, accessKey, secretKey string) (Worker, error) {
+func (wf *WorkerFactory) CreateWorker(order local_file.SellOrder, accessKey, secretKey, passwordPhrase string) (Worker, error) {
 	fmt.Printf("CreateWorker 호출: 플랫폼=%s, 주문명=%s, 심볼=%s\n", order.Platform, order.Name, order.Symbol)
 	platform := strings.ToLower(order.Platform)
 	fmt.Printf("플랫폼 변환: %s -> %s\n", order.Platform, platform)
 
 	switch platform {
 	case "upbit":
-		return NewUpbitWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewUpbitWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "bithumb":
-		return NewBithumbWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewBithumbWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "binance":
-		return NewBinanceWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewBinanceWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "bybit":
-		return NewBybitWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewBybitWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "bitget":
-		return NewBitgetWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewBitgetWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "huobi":
-		return NewHuobiWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewHuobiWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "mexc":
-		return NewMexcWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewMexcWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "kucoin":
-		return NewKuCoinWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewKuCoinWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "coinbase":
-		return NewCoinbaseWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewCoinbaseWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "coinone":
-		return NewCoinoneWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewCoinoneWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "korbit":
-		return NewKorbitWorker(order, wf.manager, accessKey, secretKey), nil
+		return NewKorbitWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+	case "okx":
+		return NewOKXWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	default:
 		// 아직 구현되지 않은 플랫폼은 기본 워커로 대체
 		fmt.Printf("지원되지 않는 플랫폼: %s, 기본 워커로 대체\n", platform)
-		return NewBaseWorker(order, wf.manager), nil
+		return NewBaseWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	}
 }
 
@@ -68,5 +70,6 @@ func (wf *WorkerFactory) GetSupportedPlatforms() []string {
 		"Coinbase",
 		"Coinone",
 		"Korbit",
+		"OKX",
 	}
 }
