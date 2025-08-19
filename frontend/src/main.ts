@@ -11,6 +11,8 @@ interface LoginResult {
     };
     userId?: string;
     platformKeys?: PlatformKey[];
+    type?: string;
+    error?: string;
 }
 
 interface PlatformKey {
@@ -206,7 +208,7 @@ async function handleLogin(event: Event): Promise<void> {
         if (result && result.success) {
             // Store user info (세션 기준)
             currentUser = result.user;
-    sessionStorage.setItem('userID', formData.userID);
+            sessionStorage.setItem('userID', formData.userID);
             
             showAlert(result.message, 'success');
             
@@ -216,6 +218,12 @@ async function handleLogin(event: Event): Promise<void> {
                 getUserInfo(formData.userID);
             }, 1000);
         } else {
+            // 접근 권한 문제인 경우
+            if (result && result.type === 'invalid_access') {
+                showInvalidAccessDialog();
+                return;
+            }
+            
             // 에러 메시지 처리 개선
             let errorMessage = '로그인에 실패했습니다.';
             if (result && result.message) {
@@ -955,9 +963,7 @@ function processUnifiedLogs(logs: any[]): void {
 
 // 통합된 로그 처리 (단일)
 function processUnifiedLog(log: any): void {
-    console.log('processUnifiedLog 호출:', log);
-    console.log('현재 sellOrders:', sellOrders);
-    
+    // 디버그 로그 제거
     // OrderName으로 해당 주문 찾기
     const order = sellOrders.find(o => o.id === log.orderName);
     
@@ -968,11 +974,6 @@ function processUnifiedLog(log: any): void {
     ) : null;
     
     const targetOrder = order || orderByPlatform;
-    
-    console.log('찾은 주문:', targetOrder);
-    console.log('로그의 orderName:', log.orderName);
-    console.log('로그의 platform:', log.platform);
-    console.log('로그의 nickname:', log.nickname);
     
     if (targetOrder) {
         // 해당 주문의 로그 컨테이너에 로그 추가 (예약 매도 관리)
@@ -1020,21 +1021,26 @@ function addLogToOrder(orderName: string, log: any): void {
     const logContainer = document.getElementById(`${orderName}-logs`);
     if (!logContainer) return;
     
+    // 스크롤 추적 설정 (처음 한 번만)
+    const containerId = `${orderName}-logs`;
+    if (!scrollStates.has(containerId)) {
+        setupScrollTracking(containerId);
+    }
+    
     const logEntry = document.createElement('div');
     logEntry.className = `log-entry ${log.logType || 'info'}`;
     
     const timestamp = new Date(log.timestamp).toLocaleTimeString();
     const message = log.message;
     
+    // 통일된 로그 포맷: [시간] 메시지
     logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
     logContainer.appendChild(logEntry);
     
-    // 자동 스크롤 (사용자가 스크롤을 올리지 않았을 때만)
-    if (logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10) {
-        logContainer.scrollTop = logContainer.scrollHeight;
-    }
+    // 자동 스크롤 수행
+    autoScrollToBottom(containerId);
     
-    // 최대 20개 로그만 유지
+    // 최대 300개 로그만 유지
     const logEntries = logContainer.querySelectorAll('.log-entry');
     if (logEntries.length > 300) {
         logEntries[0].remove();
@@ -1049,7 +1055,11 @@ function addLogToGrid(orderName: string, log: any): void {
         return;
     }
     
-    console.log('그리드 로그 컨테이너 찾음:', gridLogContainer);
+    // 스크롤 추적 설정 (처음 한 번만)
+    const containerId = `${orderName}-grid-logs`;
+    if (!scrollStates.has(containerId)) {
+        setupScrollTracking(containerId);
+    }
     
     const logEntry = document.createElement('div');
     logEntry.className = `log-entry ${log.logType || 'info'}`;
@@ -1057,15 +1067,12 @@ function addLogToGrid(orderName: string, log: any): void {
     const timestamp = new Date(log.timestamp).toLocaleTimeString();
     const message = log.message;
     
+    // 통일된 로그 포맷: [시간] 메시지
     logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
     gridLogContainer.appendChild(logEntry);
     
-    console.log('그리드 로그 엔트리 추가됨:', logEntry.innerHTML);
-    
-    // 자동 스크롤 (사용자가 스크롤을 올리지 않았을 때만)
-    if (gridLogContainer.scrollTop + gridLogContainer.clientHeight >= gridLogContainer.scrollHeight - 10) {
-        gridLogContainer.scrollTop = gridLogContainer.scrollHeight;
-    }
+    // 자동 스크롤 수행
+    autoScrollToBottom(containerId);
     
     // 최대 50개 로그만 유지
     const logEntries = gridLogContainer.querySelectorAll('.log-entry');
@@ -1078,16 +1085,23 @@ function addLogToGrid(orderName: string, log: any): void {
 function addSystemLog(log: { timestamp: Date | string | number; message: string; logType?: string }): void {
     const systemLogContainer = document.getElementById('system-log-container');
     if (!systemLogContainer) return;
+    
+    // 스크롤 추적 설정 (처음 한 번만)
+    const containerId = 'system-log-container';
+    if (!scrollStates.has(containerId)) {
+        setupScrollTracking(containerId);
+    }
+    
     const logEntry = document.createElement('div');
     logEntry.className = `system-log-entry ${log.logType || 'info'}`;
     const ts = new Date(log.timestamp).toLocaleTimeString();
+    // 통일된 로그 포맷: [시간] 메시지
     logEntry.innerHTML = `<span class="timestamp">[${ts}]</span> ${log.message}`;
     systemLogContainer.appendChild(logEntry);
     
-    // 자동 스크롤 (사용자가 스크롤을 올리지 않았을 때만)
-    if (systemLogContainer.scrollTop + systemLogContainer.clientHeight >= systemLogContainer.scrollHeight - 10) {
-        systemLogContainer.scrollTop = systemLogContainer.scrollHeight;
-    }
+    // 자동 스크롤 수행
+    autoScrollToBottom(containerId);
+    
     const logEntries = systemLogContainer.querySelectorAll('.system-log-entry');
     if (logEntries.length > 100) logEntries[0].remove();
 }
@@ -1098,6 +1112,12 @@ function addSystemLog(log: { timestamp: Date | string | number; message: string;
 function displayModalLogs(logs: any[]): void {
     const logContent = document.getElementById('log-content');
     if (!logContent) return;
+    
+    // 스크롤 추적 설정 (처음 한 번만)
+    const containerId = 'log-content';
+    if (!scrollStates.has(containerId)) {
+        setupScrollTracking(containerId);
+    }
     
     // 기존 로그 제거
     logContent.innerHTML = '';
@@ -1112,14 +1132,13 @@ function displayModalLogs(logs: any[]): void {
         const timestamp = new Date(log.timestamp).toLocaleTimeString();
         const message = log.message;
         
+        // 통일된 로그 포맷: [시간] 메시지
         logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
         logContent.appendChild(logEntry);
     });
     
-    // 자동 스크롤 (사용자가 스크롤을 올리지 않았을 때만)
-    if (logContent.scrollTop + logContent.clientHeight >= logContent.scrollHeight - 10) {
-        logContent.scrollTop = logContent.scrollHeight;
-    }
+    // 자동 스크롤 수행
+    autoScrollToBottom(containerId);
 }
 
 // 예약 매도 요소 생성
@@ -1458,7 +1477,13 @@ function initApp(): void {
 }
 
 // Event listeners
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    // 업데이트 체크
+    await checkForUpdatesOnStartup();
+    
+    // 주기적 알림 확인 (5초마다)
+    setInterval(checkPeriodicNotifications, 5000);
+    
     initApp();
 });
 
@@ -1692,5 +1717,413 @@ function showToast(message: string, type: 'success' | 'error' | 'warning' = 'suc
 
 // 현재 플랫폼 목록 저장용
 let currentPlatforms: PlatformKey[] = [];
+
+// 스크롤 상태 추적을 위한 변수들
+const scrollStates = new Map<string, { userScrolled: boolean; lastScrollTop: number }>();
+
+// 스크롤 이벤트 리스너를 추가하는 함수
+function setupScrollTracking(containerId: string): void {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    // 초기 상태 설정
+    scrollStates.set(containerId, { userScrolled: false, lastScrollTop: 0 });
+    
+    // 스크롤 이벤트 리스너 추가
+    container.addEventListener('scroll', () => {
+        const state = scrollStates.get(containerId);
+        if (!state) return;
+        
+        const currentScrollTop = container.scrollTop;
+        const isAtBottom = currentScrollTop + container.clientHeight >= container.scrollHeight - 10;
+        
+        // 사용자가 스크롤을 움직였는지 확인 (더 정확한 감지)
+        const scrollDifference = Math.abs(currentScrollTop - state.lastScrollTop);
+        if (scrollDifference > 10) { // 10px 이상 움직였을 때만 사용자 스크롤로 인식
+            // 맨 아래에 있으면 자동 스크롤 활성화, 그렇지 않으면 비활성화
+            state.userScrolled = !isAtBottom;
+        }
+        
+        state.lastScrollTop = currentScrollTop;
+    });
+    
+    // 마우스 휠 이벤트도 감지 (더 정확한 사용자 의도 파악)
+    container.addEventListener('wheel', () => {
+        const state = scrollStates.get(containerId);
+        if (!state) return;
+        
+        const currentScrollTop = container.scrollTop;
+        const isAtBottom = currentScrollTop + container.clientHeight >= container.scrollHeight - 10;
+        
+        // 휠 이벤트가 발생하면 사용자가 스크롤을 의도했다고 판단
+        state.userScrolled = !isAtBottom;
+        state.lastScrollTop = currentScrollTop;
+    });
+}
+
+// 자동 스크롤을 수행하는 함수
+function autoScrollToBottom(containerId: string): void {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const state = scrollStates.get(containerId);
+    if (!state) return;
+    
+    // 사용자가 스크롤을 움직이지 않았거나 맨 아래에 있을 때만 자동 스크롤
+    if (!state.userScrolled) {
+        // 부드러운 스크롤을 위해 requestAnimationFrame 사용
+        requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight;
+            // 스크롤 후 상태 업데이트
+            state.lastScrollTop = container.scrollTop;
+        });
+    }
+}
+
+// 업데이트 다이얼로그 관련 함수들
+function showUpdateDialog(isRequired: boolean, currentVersion: string, requiredVersion: string): Promise<boolean> {
+    return new Promise((resolve) => {
+        // 기존 다이얼로그가 있으면 제거
+        const existingDialog = document.getElementById('update-dialog');
+        if (existingDialog) {
+            existingDialog.remove();
+        }
+
+        const dialog = document.createElement('div');
+        dialog.id = 'update-dialog';
+        dialog.className = 'update-dialog-overlay';
+        
+        const title = isRequired ? '필수 업데이트가 있습니다' : '업데이트가 있습니다';
+        const message = isRequired 
+            ? `업데이트를 하지 않으면 프로그램이 종료됩니다.\n현재 버전: ${currentVersion}\n필수 버전: ${requiredVersion}`
+            : `업데이트하시겠습니까?\n현재 버전: ${currentVersion}\n권장 버전: ${requiredVersion}`;
+
+        dialog.innerHTML = `
+            <div class="update-dialog">
+                <div class="update-dialog-header">
+                    <h3>${title}</h3>
+                </div>
+                <div class="update-dialog-body">
+                    <p>${message}</p>
+                </div>
+                <div class="update-dialog-footer">
+                    <button id="update-btn" class="btn btn-primary">업데이트</button>
+                    <button id="cancel-btn" class="btn btn-secondary">취소</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(dialog);
+
+        // 이벤트 리스너 추가
+        document.getElementById('update-btn')?.addEventListener('click', () => {
+            dialog.remove();
+            resolve(true);
+        });
+
+        document.getElementById('cancel-btn')?.addEventListener('click', () => {
+            dialog.remove();
+            resolve(false);
+        });
+    });
+}
+
+// 업데이트 진행 상태 표시
+function showUpdateProgress(): void {
+    const existingProgress = document.getElementById('update-progress');
+    if (existingProgress) {
+        existingProgress.remove();
+    }
+
+    const progress = document.createElement('div');
+    progress.id = 'update-progress';
+    progress.className = 'update-progress-overlay';
+    
+    progress.innerHTML = `
+        <div class="update-progress">
+            <div class="update-progress-header">
+                <h3>업데이트 중...</h3>
+            </div>
+            <div class="update-progress-body">
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+                <p>새 버전을 다운로드하고 있습니다...</p>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(progress);
+}
+
+// 업데이트 진행 상태 숨기기
+function hideUpdateProgress(): void {
+    const progress = document.getElementById('update-progress');
+    if (progress) {
+        progress.remove();
+    }
+}
+
+// 재시작 안내 다이얼로그 표시
+function showRestartDialog(): void {
+    const existingDialog = document.getElementById('restart-dialog');
+    if (existingDialog) {
+        existingDialog.remove();
+    }
+
+    const dialog = document.createElement('div');
+    dialog.id = 'restart-dialog';
+    dialog.className = 'update-dialog-overlay';
+    
+    dialog.innerHTML = `
+        <div class="update-dialog">
+            <div class="update-dialog-header">
+                <h3>업데이트 완료</h3>
+            </div>
+            <div class="update-dialog-body">
+                <p>업데이트가 완료되었습니다.</p>
+                <p>새로운 버전을 적용하려면 프로그램을 다시 시작해주세요.</p>
+            </div>
+            <div class="update-dialog-footer">
+                <button id="confirm-btn" class="btn btn-primary">종료</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // 이벤트 리스너 추가
+    document.getElementById('confirm-btn')?.addEventListener('click', () => {
+        dialog.remove();
+        // 프로그램 종료
+        if ((window as any).runtime) {
+            (window as any).runtime.Quit();
+        } else {
+            // fallback: window.close() 시도
+            window.close();
+        }
+    });
+}
+
+// 잘못된 접근 다이얼로그 표시
+function showInvalidAccessDialog(): void {
+    const existingDialog = document.getElementById('invalid-access-dialog');
+    if (existingDialog) {
+        existingDialog.remove();
+    }
+
+    const dialog = document.createElement('div');
+    dialog.id = 'invalid-access-dialog';
+    dialog.className = 'update-dialog-overlay';
+    
+    dialog.innerHTML = `
+        <div class="update-dialog">
+            <div class="update-dialog-header">
+                <h3>잘못된 접근</h3>
+            </div>
+            <div class="update-dialog-body">
+                <p>접근 권한이 없거나 프로그램이 비활성화되었습니다.</p>
+                <p>모든 워커가 중지되었습니다.</p>
+            </div>
+            <div class="update-dialog-footer">
+                <button id="exit-btn" class="btn btn-primary">종료</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // 이벤트 리스너 추가
+    document.getElementById('exit-btn')?.addEventListener('click', () => {
+        dialog.remove();
+        // 프로그램 종료
+        if ((window as any).runtime) {
+            (window as any).runtime.Quit();
+        } else {
+            // fallback: window.close() 시도
+            window.close();
+        }
+    });
+}
+
+// 앱 시작 시 업데이트 체크
+async function checkForUpdatesOnStartup(): Promise<void> {
+    try {
+        const result = await window.go.main.App.CheckForUpdates();
+        
+        if (!result.success) {
+            // 접근 권한 문제인 경우
+            if (result.type === 'invalid_access') {
+                showInvalidAccessDialog();
+                return;
+            }
+            // 기타 오류
+            showToast(result.message, 'error');
+            return;
+        }
+        
+        if (result.updateRequired) {
+            // 필수 업데이트인지 선택적 업데이트인지에 따라 다른 버전 정보 사용
+            const versionToShow = result.isRequired ? result.requiredVersion : result.recommendedVersion;
+            
+            const shouldUpdate = await showUpdateDialog(
+                result.isRequired,
+                result.currentVersion,
+                versionToShow
+            );
+            
+            if (shouldUpdate) {
+                await performUpdate();
+            } else if (result.isRequired) {
+                // 필수 업데이트에서 취소를 누른 경우 프로그램 종료
+                if ((window as any).runtime) {
+                    (window as any).runtime.Quit();
+                } else {
+                    window.close();
+                }
+            }
+        }
+    } catch (error) {
+        console.error('업데이트 체크 실패:', error);
+    }
+}
+
+// 주기적 알림 확인 및 처리
+async function checkPeriodicNotifications(): Promise<void> {
+    try {
+        const result = await window.go.main.App.GetPeriodicValidationNotification();
+        
+        if (result.hasNotification) {
+            if (result.type === 'required_update') {
+                // 필수 업데이트 - 워커 중지 후 업데이트 다이얼로그
+                await handleRequiredUpdate();
+            } else if (result.type === 'optional_update') {
+                // 선택적 업데이트 - 워커 유지하고 업데이트 다이얼로그
+                await handleOptionalUpdate();
+            } else if (result.type === 'invalid_access') {
+                // 잘못된 접근 - 워커 중지 후 종료 다이얼로그
+                showInvalidAccessDialog();
+            }
+        }
+    } catch (error) {
+        console.error('주기적 알림 확인 실패:', error);
+    }
+}
+
+// 필수 업데이트 처리 (워커 중지 후 업데이트)
+async function handleRequiredUpdate(): Promise<void> {
+    try {
+        const result = await window.go.main.App.CheckForUpdates();
+        if (result.success && result.updateRequired) {
+            const versionToShow = result.isRequired ? result.requiredVersion : result.recommendedVersion;
+            const shouldUpdate = await showUpdateDialog(
+                result.isRequired,
+                result.currentVersion,
+                versionToShow
+            );
+            
+            if (shouldUpdate) {
+                await performUpdate();
+            } else {
+                // 필수 업데이트에서 취소를 누른 경우 프로그램 종료
+                if ((window as any).runtime) {
+                    (window as any).runtime.Quit();
+                } else {
+                    window.close();
+                }
+            }
+        }
+    } catch (error) {
+        console.error('필수 업데이트 처리 실패:', error);
+    }
+}
+
+// 선택적 업데이트 처리 (워커 유지하고 업데이트)
+async function handleOptionalUpdate(): Promise<void> {
+    try {
+        const result = await window.go.main.App.CheckForUpdates();
+        if (result.success && result.updateRequired) {
+            const versionToShow = result.isRequired ? result.requiredVersion : result.recommendedVersion;
+            const shouldUpdate = await showUpdateDialog(
+                result.isRequired,
+                result.currentVersion,
+                versionToShow
+            );
+            
+            if (shouldUpdate) {
+                await performUpdate();
+            }
+            // 선택적 업데이트에서 취소를 누른 경우 계속 사용
+        }
+    } catch (error) {
+        console.error('선택적 업데이트 처리 실패:', error);
+    }
+}
+
+// 주기적 검증 결과 처리
+async function handlePeriodicValidation(): Promise<void> {
+    try {
+        const result = await window.go.main.App.CheckPeriodicValidation();
+        
+        if (!result.success) {
+            if (result.type === 'version_update') {
+                // 버전 업데이트 필요
+                const updateResult = await window.go.main.App.CheckForUpdates();
+                if (updateResult.success && updateResult.updateRequired) {
+                    const versionToShow = updateResult.isRequired ? updateResult.requiredVersion : updateResult.recommendedVersion;
+                    const shouldUpdate = await showUpdateDialog(
+                        updateResult.isRequired,
+                        updateResult.currentVersion,
+                        versionToShow
+                    );
+                    
+                    if (shouldUpdate) {
+                        await performUpdate();
+                    } else if (updateResult.isRequired) {
+                        // 필수 업데이트에서 취소를 누른 경우 프로그램 종료
+                        if ((window as any).runtime) {
+                            (window as any).runtime.Quit();
+                        } else {
+                            window.close();
+                        }
+                    }
+                }
+            } else if (result.type === 'invalid_access') {
+                // 잘못된 접근 - 워커 중지 및 종료 다이얼로그 표시
+                showInvalidAccessDialog();
+            } else {
+                // 기타 오류
+                showToast(result.message, 'error');
+            }
+        }
+    } catch (error) {
+        console.error('주기적 검증 처리 실패:', error);
+    }
+}
+
+// 업데이트 수행
+async function performUpdate(): Promise<void> {
+    try {
+        showUpdateProgress();
+        
+        const result = await window.go.main.App.PerformUpdate();
+        
+        if (result.success) {
+            hideUpdateProgress();
+            if (result.restartRequired) {
+                showRestartDialog();
+            } else {
+                showToast('업데이트가 완료되었습니다.', 'success');
+            }
+        } else {
+            hideUpdateProgress();
+            showToast(result.message, 'error');
+        }
+    } catch (error) {
+        hideUpdateProgress();
+        console.error('업데이트 실패:', error);
+        showToast('업데이트 중 오류가 발생했습니다.', 'error');
+    }
+}
 
  

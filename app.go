@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 )
 
 // App struct
@@ -51,6 +52,9 @@ func (a *App) startup(ctx context.Context) {
 			log.Printf("웹소켓 서버 시작 실패: %v", err)
 		}
 	}()
+
+	// 주기적 설정 검증 시작 (시작 즉시 1번 + 30분마다)
+	startPeriodicConfigCheck()
 }
 
 // LocalFileService 객체
@@ -74,11 +78,20 @@ func (a *App) Login(userID, password string) map[string]interface{} {
 	if err := checkUserAccess(userID); err != nil {
 		return map[string]interface{}{
 			"success": false,
-			"message": err.Error(),
+			"type":    "invalid_access",
+			"message": "잘못된 접근입니다.",
+			"error":   err.Error(),
 		}
 	}
 
-	return a.userHandler.Login(userID, password)
+	result := a.userHandler.Login(userID, password)
+
+	// 로그인 성공 시 현재 사용자 설정
+	if success, ok := result["success"].(bool); ok && success {
+		setCurrentUser(userID)
+	}
+
+	return result
 }
 
 func (a *App) Register(userID, password string) map[string]interface{} {
@@ -94,7 +107,12 @@ func (a *App) GetAccountInfo(userID string) map[string]interface{} {
 }
 
 func (a *App) Logout(userID string) map[string]interface{} {
-	return a.userHandler.Logout(userID)
+	result := a.userHandler.Logout(userID)
+
+	// 로그아웃 시 현재 사용자 초기화
+	clearCurrentUser()
+
+	return result
 }
 
 // Platform 관련 메서드들
@@ -312,4 +330,167 @@ func (a *App) createWorkersForUser(userID string, userData *local_file.UserData)
 	}
 
 	return nil
+}
+
+// CheckForUpdates 업데이트가 필요한지 확인합니다
+func (a *App) CheckForUpdates() map[string]interface{} {
+	// 설정이 로드되지 않은 경우 먼저 로드 시도
+	if config == nil {
+		if err := performConfigValidation(); err != nil {
+			return map[string]interface{}{
+				"success": false,
+				"message": fmt.Sprintf("설정 로드 실패: %v", err),
+				"error":   err.Error(),
+			}
+		}
+	}
+
+	// 프로그램 상태 체크 (running, whiteList, version)
+	if err := checkProgramStatus(); err != nil {
+		if strings.Contains(err.Error(), "required_update") {
+			// 필수 업데이트
+			currentVersion := getVersion()
+			return map[string]interface{}{
+				"success":            true,
+				"updateRequired":     true,
+				"isRequired":         true,
+				"currentVersion":     currentVersion,
+				"requiredVersion":    config.MinVer,
+				"recommendedVersion": config.MinVer,
+				"message":            "필수 업데이트가 필요합니다. 프로그램을 사용하려면 업데이트가 필요합니다.",
+			}
+		} else if strings.Contains(err.Error(), "optional_update") {
+			// 선택적 업데이트
+			currentVersion := getVersion()
+			return map[string]interface{}{
+				"success":            true,
+				"updateRequired":     true,
+				"isRequired":         false,
+				"currentVersion":     currentVersion,
+				"requiredVersion":    config.MainVer,
+				"recommendedVersion": config.MainVer,
+				"message":            "새로운 버전이 있습니다. 업데이트하시겠습니까?",
+			}
+		} else if strings.Contains(err.Error(), "invalid account") || strings.Contains(err.Error(), "프로그램이 비활성화되었습니다") {
+			// 접근 권한 문제
+			return map[string]interface{}{
+				"success": false,
+				"type":    "invalid_access",
+				"message": "잘못된 접근입니다.",
+				"error":   err.Error(),
+			}
+		} else {
+			// 기타 문제
+			return map[string]interface{}{
+				"success": false,
+				"message": fmt.Sprintf("프로그램 상태 검증 실패: %v", err),
+				"error":   err.Error(),
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"success":        true,
+		"updateRequired": false,
+		"message":        "최신 버전입니다.",
+	}
+}
+
+// PerformUpdate 업데이트를 수행합니다
+func (a *App) PerformUpdate() map[string]interface{} {
+	if err := performAutoUpdate(); err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("업데이트 실패: %v", err),
+		}
+	}
+
+	// 업데이트 성공 시 로그만 남김
+	log.Printf("업데이트 완료 - 사용자에게 재시작 안내")
+
+	return map[string]interface{}{
+		"success":         true,
+		"message":         "업데이트가 완료되었습니다. 프로그램을 다시 시작해주세요.",
+		"restartRequired": true,
+	}
+}
+
+// CheckPeriodicValidation 주기적 검증 결과를 확인합니다
+func (a *App) CheckPeriodicValidation() map[string]interface{} {
+	if err := performConfigValidation(); err != nil {
+		// 에러 타입에 따라 다른 처리
+		if strings.Contains(err.Error(), "required_update") || strings.Contains(err.Error(), "optional_update") {
+			// 버전 관련 문제 - 업데이트 다이얼로그 표시
+			return map[string]interface{}{
+				"success": false,
+				"type":    "version_update",
+				"message": "새로운 버전이 있습니다.",
+				"error":   err.Error(),
+			}
+		} else if strings.Contains(err.Error(), "invalid account") || strings.Contains(err.Error(), "프로그램이 비활성화되었습니다") {
+			// 접근 권한 문제 - 잘못된 접근 메시지 표시
+			return map[string]interface{}{
+				"success": false,
+				"type":    "invalid_access",
+				"message": "잘못된 접근입니다.",
+				"error":   err.Error(),
+			}
+		} else {
+			// 기타 문제
+			return map[string]interface{}{
+				"success": false,
+				"type":    "general_error",
+				"message": "설정 검증에 실패했습니다.",
+				"error":   err.Error(),
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": "설정 검증 성공",
+	}
+}
+
+// GetPeriodicValidationNotification 주기적 검증 알림을 확인합니다
+func (a *App) GetPeriodicValidationNotification() map[string]interface{} {
+	if periodicValidationChan == nil {
+		return map[string]interface{}{
+			"success":         true,
+			"hasNotification": false,
+		}
+	}
+
+	select {
+	case notification := <-periodicValidationChan:
+		if strings.Contains(notification, "required_update") {
+			return map[string]interface{}{
+				"success":         false,
+				"hasNotification": true,
+				"type":            "required_update",
+				"message":         "필수 업데이트가 필요합니다.",
+			}
+		} else if strings.Contains(notification, "optional_update") {
+			return map[string]interface{}{
+				"success":         false,
+				"hasNotification": true,
+				"type":            "optional_update",
+				"message":         "선택적 업데이트가 가능합니다.",
+			}
+		} else if notification == "invalid_access" {
+			return map[string]interface{}{
+				"success":         false,
+				"hasNotification": true,
+				"type":            "invalid_access",
+				"message":         "잘못된 접근입니다.",
+			}
+		}
+	default:
+		// 알림이 없음
+	}
+
+	return map[string]interface{}{
+		"success":         true,
+		"hasNotification": false,
+	}
 }

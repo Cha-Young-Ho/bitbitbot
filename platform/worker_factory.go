@@ -20,9 +20,7 @@ func NewWorkerFactory(manager *WorkerManager) *WorkerFactory {
 
 // CreateWorker 플랫폼에 따라 적절한 워커를 생성합니다
 func (wf *WorkerFactory) CreateWorker(order local_file.SellOrder, accessKey, secretKey, passwordPhrase string) (Worker, error) {
-	fmt.Printf("CreateWorker 호출: 플랫폼=%s, 주문명=%s, 심볼=%s\n", order.Platform, order.Name, order.Symbol)
 	platform := strings.ToLower(order.Platform)
-	fmt.Printf("플랫폼 변환: %s -> %s\n", order.Platform, platform)
 
 	switch platform {
 	case "upbit":

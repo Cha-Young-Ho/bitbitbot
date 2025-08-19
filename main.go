@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"log"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -11,22 +12,14 @@ import (
 var assets embed.FS
 
 func main() {
-	// 설정 초기화
+	// 설정 초기화만 수행 (실제 검증은 프론트엔드에서 처리)
 	if err := initConfigSettings(); err != nil {
-		return
-	}
-
-	// 1. 앱이 처음 시작되면 설정 파일에 접근
-	if err := performConfigValidation(); err != nil {
-		showInvalidVersionAndExit()
+		log.Printf("설정 초기화 실패: %v", err)
 		return
 	}
 
 	// Create an instance of the app structure
 	app := NewApp()
-
-	// 주기적 설정 검증 시작 (30분마다)
-	startPeriodicConfigCheck()
 
 	// Create application with options
 	err := wails.Run(&options.App{

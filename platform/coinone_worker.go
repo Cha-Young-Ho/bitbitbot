@@ -83,10 +83,8 @@ func (cw *CoinoneWorker) run() {
 	ticker := time.NewTicker(time.Duration(cw.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	cw.sendLog("Coinone 워커가 시작되었습니다", "info")
-	fmt.Printf("[Coinone] 워커 시작 - 주문명: %s, 심볼: %s, 지정가: %.2f, 주기: %.1f초\n",
-		cw.order.Name, cw.order.Symbol, cw.order.Price, cw.order.Term)
+	// 시작 로그 제거
+	// Coinone 워커 시작 로그 제거
 
 	for {
 		select {

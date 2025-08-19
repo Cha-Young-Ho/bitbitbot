@@ -60,7 +60,7 @@ func (uw *UpbitWorker) Start(ctx context.Context) error {
 func (uw *UpbitWorker) run() {
 	// Term(초)이 소수일 수 있으므로 밀리초로 변환하여 절삭 방지, 최소 1ms 보장
 
-	fmt.Println("Upbit 워커 시작 ")
+	// Upbit 워커 시작 로그 제거
 	intervalMs := int64(uw.order.Term * 1000)
 	if intervalMs < 1 {
 		intervalMs = 1
@@ -68,8 +68,7 @@ func (uw *UpbitWorker) run() {
 	ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
 	defer ticker.Stop()
 
-	// 시작 로그
-	uw.sendLog("Upbit 워커가 시작되었습니다", "info")
+	// 시작 로그 제거
 
 	for {
 		select {
@@ -77,7 +76,7 @@ func (uw *UpbitWorker) run() {
 			uw.sendLog("Upbit 워커가 중지되었습니다", "info")
 			return
 		case <-ticker.C:
-			fmt.Println("Upbit 워커 실행 ")
+			// Upbit 워커 실행 로그 제거
 			// 매 tick마다 반드시 실행: 비동기 고루틴으로 처리 (이전 요청 진행 중이어도 새 요청 즉시 시작)
 			go uw.executeSellOrder(uw.order.Price)
 		}
@@ -143,10 +142,8 @@ func (uw *UpbitWorker) executeSellOrder(price float64) {
 		return
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// 실패 사유를 터미널과 시스템 로그에 함께 남김
+		// 실패 사유를 시스템 로그에 남김
 		errMsg := fmt.Sprintf("주문 실패 (status=%d): %v", resp.StatusCode, respBody)
-		// 터미널 출력
-		fmt.Println("[UpbitWorker]", errMsg)
 		// 시스템 로그
 		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", errMsg, "error", "", uw.order.Name, "")
 		// 워커 로그에도 실패 메시지 추가
@@ -156,7 +153,6 @@ func (uw *UpbitWorker) executeSellOrder(price float64) {
 
 	// 성공 시 응답 내용 로그
 	successMsg := fmt.Sprintf("주문 성공 (status=%d): %v", resp.StatusCode, respBody)
-	fmt.Println("[UpbitWorker]", successMsg)
 	uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", successMsg, "info", "", uw.order.Name, "")
 	uw.sendLog("Upbit 지정가 매도 주문이 접수되었습니다", "success")
 }

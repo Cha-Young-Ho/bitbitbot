@@ -70,16 +70,14 @@ func (bw *BinanceWorker) run() {
 	ticker := time.NewTicker(time.Duration(bw.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	bw.sendLog("Binance 워커가 시작되었습니다", "info")
-	fmt.Printf("[Binance] 워커 시작 - 주문명: %s, 심볼: %s, 지정가: %.2f, 주기: %.1f초\n",
-		bw.order.Name, bw.order.Symbol, bw.order.Price, bw.order.Term)
+	// 시작 로그 제거
+	// Binance 워커 시작 로그 제거
 
 	for {
 		select {
 		case <-bw.ctx.Done():
 			bw.sendLog("Binance 워커가 중지되었습니다", "info")
-			fmt.Printf("[Binance] 워커 중지 - 주문명: %s\n", bw.order.Name)
+			// Binance 워커 중지 로그 제거
 			return
 		case <-ticker.C:
 			bw.executeSellOrder()

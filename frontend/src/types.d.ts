@@ -7,6 +7,10 @@ declare global {
                     Login: (userID: string, password: string) => Promise<any>;
                     Register: (userID: string, password: string) => Promise<any>;
                     GetUserInfo: (userID: string) => Promise<any>;
+                    CheckForUpdates: () => Promise<any>;
+                    PerformUpdate: () => Promise<any>;
+                    CheckPeriodicValidation: () => Promise<any>;
+                    GetPeriodicValidationNotification: () => Promise<any>;
                 };
             };
         };

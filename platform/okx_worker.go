@@ -70,16 +70,14 @@ func (ow *OKXWorker) run() {
 	ticker := time.NewTicker(time.Duration(ow.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	ow.sendLog("OKX 워커가 시작되었습니다", "info")
-	fmt.Printf("[OKX] 워커 시작 - 주문명: %s, 심볼: %s, 지정가: %.2f, 주기: %.1f초\n",
-		ow.order.Name, ow.order.Symbol, ow.order.Price, ow.order.Term)
+	// 시작 로그 제거
+	// OKX 워커 시작 로그 제거
 
 	for {
 		select {
 		case <-ow.ctx.Done():
 			ow.sendLog("OKX 워커가 중지되었습니다", "info")
-			fmt.Printf("[OKX] 워커 중지 - 주문명: %s\n", ow.order.Name)
+			// OKX 워커 중지 로그 제거
 			return
 		case <-ticker.C:
 			ow.executeSellOrder()
@@ -127,14 +125,14 @@ func (ow *OKXWorker) executeSellOrder() {
 		ow.mu.Unlock()
 
 		ow.sendLog(fmt.Sprintf("매도 주문 실패: %v", err), "error")
-		fmt.Printf("[OKX] 매도 주문 실패 - 주문명: %s, 에러: %v\n", ow.order.Name, err)
+		// OKX 매도 주문 실패 로그 제거
 		return
 	}
 
 	// 성공 로그
 	ow.sendLog(fmt.Sprintf("매도 주문 성공 - 주문ID: %s, 심볼: %s, 수량: %.8f, 가격: %.2f",
 		orderID, okxSymbol, ow.order.Quantity, ow.order.Price), "order", ow.order.Price, ow.order.Quantity)
-	fmt.Printf("[OKX] 매도 주문 성공 - 주문명: %s, 주문ID: %s\n", ow.order.Name, orderID)
+	// OKX 매도 주문 성공 로그 제거
 
 	// 워커 중지 (주문 완료)
 	ow.Stop()

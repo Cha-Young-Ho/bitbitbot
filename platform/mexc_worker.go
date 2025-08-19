@@ -70,16 +70,14 @@ func (mw *MexcWorker) run() {
 	ticker := time.NewTicker(time.Duration(mw.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	mw.sendLog("Mexc 워커가 시작되었습니다", "info")
-	fmt.Printf("[Mexc] 워커 시작 - 주문명: %s, 심볼: %s, 지정가: %.2f, 주기: %.1f초\n",
-		mw.order.Name, mw.order.Symbol, mw.order.Price, mw.order.Term)
+	// 시작 로그 제거
+	// Mexc 워커 시작 로그 제거
 
 	for {
 		select {
 		case <-mw.ctx.Done():
 			mw.sendLog("Mexc 워커가 중지되었습니다", "info")
-			fmt.Printf("[Mexc] 워커 중지 - 주문명: %s\n", mw.order.Name)
+			// Mexc 워커 중지 로그 제거
 			return
 		case <-ticker.C:
 			mw.executeSellOrder()

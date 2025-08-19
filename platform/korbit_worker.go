@@ -82,10 +82,8 @@ func (kw *KorbitWorker) run() {
 	ticker := time.NewTicker(time.Duration(kw.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	kw.sendLog("Korbit 워커가 시작되었습니다", "info")
-	fmt.Printf("[Korbit] 워커 시작 - 주문명: %s, 심볼: %s, 지정가: %.2f, 주기: %.1f초\n",
-		kw.order.Name, kw.order.Symbol, kw.order.Price, kw.order.Term)
+	// 시작 로그 제거
+	// Korbit 워커 시작 로그 제거
 
 	for {
 		select {

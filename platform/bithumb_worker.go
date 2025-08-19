@@ -53,10 +53,8 @@ func (bw *BithumbWorker) run() {
 	ticker := time.NewTicker(time.Duration(bw.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	bw.sendLog("Bithumb 워커가 시작되었습니다", "info")
-	fmt.Printf("[Bithumb] 워커 시작 - 주문명: %s, 심볼: %s, 목표가: %.2f\n",
-		bw.order.Name, bw.order.Symbol, bw.order.Price)
+	// 시작 로그 제거
+	// Bithumb 워커 시작 로그 제거
 
 	for {
 		select {
@@ -77,8 +75,7 @@ func (bw *BithumbWorker) printStatus() {
 	bw.status.CheckCount++
 	bw.mu.Unlock()
 
-	fmt.Printf("[Bithumb] 상태 출력 - 주문명: %s, 심볼: %s, 목표가: %.2f, 수량: %.8f, 체크횟수: %d\n",
-		bw.order.Name, bw.order.Symbol, bw.order.Price, bw.order.Quantity, bw.status.CheckCount)
+	// Bithumb 상태 출력 로그 제거
 
 	bw.sendStatusLog(fmt.Sprintf("Bithumb 상태 확인 - 체크횟수: %d, 목표가: %.2f, 현재가: %.2f",
 		bw.status.CheckCount, bw.order.Price, bw.status.LastPrice))

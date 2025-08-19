@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -251,20 +252,74 @@ func (workerManager *WorkerManager) UnregisterWebSocketClient(userID string, cli
 
 // SendLog 로그를 채널에 전송합니다
 func (workerManager *WorkerManager) SendLog(workerLog WorkerLog) {
-	log.Printf("SendLog 호출: %s - %s", workerLog.OrderName, workerLog.Message)
+	// 에러 메시지 정리
+	if workerLog.LogType == "error" {
+		workerLog.Message = cleanErrorMessage(workerLog.Message)
+	}
+
+	// 로그 포맷 통일: [플랫폼] 주문명 - 메시지
+	logMessage := fmt.Sprintf("[%s] %s - %s", workerLog.Platform, workerLog.OrderName, workerLog.Message)
+	log.Printf(logMessage)
 
 	select {
 	case workerManager.logChan <- workerLog:
-		log.Printf("로그 채널 전송 성공: %s", workerLog.Message)
+		// 로그 채널 전송 성공 로그 제거
 	default:
 		// 채널이 가득 찬 경우 로그를 버립니다
-		log.Printf("로그 채널이 가득 찼습니다. 로그를 버립니다: %s", workerLog.Message)
+		log.Printf("로그 채널이 가득 찬 경우 로그를 버립니다: %s", workerLog.Message)
 	}
 
 	// 단일 전송 래퍼로 전송 (프론트에서 파싱)
 	workerManager.emitOutbound(workerLog.UserID, OutboundEnvelope{Category: "orderLog", Data: workerLog})
 	// 시스템 로그에도 워커 로그 전송(통합 포맷)
 	workerManager.SendSystemLog("Worker", "SendLog", workerLog.Message, workerLog.LogType, workerLog.UserID, workerLog.OrderName, "")
+}
+
+// cleanErrorMessage CCXT 에러 메시지를 정리합니다
+func cleanErrorMessage(errorMsg string) string {
+	// panic 메시지 제거
+	if strings.Contains(errorMsg, "panic:") {
+		// panic 이후의 실제 에러 메시지만 추출
+		if strings.Contains(errorMsg, "[ccxtError]") {
+			// [ccxtError]::[InsufficientFunds]::[bitget {"code":"43012","msg":"Insufficient balance","requestTime":1755607862203,"data":null}]
+			// 형태에서 실제 에러 정보만 추출
+			parts := strings.Split(errorMsg, "::")
+			if len(parts) >= 3 {
+				// 마지막 부분에서 JSON 추출
+				lastPart := parts[len(parts)-1]
+				if strings.Contains(lastPart, "{") {
+					start := strings.Index(lastPart, "{")
+					end := strings.LastIndex(lastPart, "}")
+					if start != -1 && end != -1 && end > start {
+						jsonPart := lastPart[start : end+1]
+						// JSON 파싱 시도
+						var errorData map[string]interface{}
+						if err := json.Unmarshal([]byte(jsonPart), &errorData); err == nil {
+							if msg, ok := errorData["msg"].(string); ok {
+								return fmt.Sprintf("CCXT 에러: %s", msg)
+							}
+						}
+						// JSON 파싱 실패시 원본 반환
+						return fmt.Sprintf("CCXT 에러: %s", jsonPart)
+					}
+				}
+				// 플랫폼명 추출
+				platform := parts[len(parts)-2]
+				return fmt.Sprintf("CCXT 에러 (%s): %s", platform, parts[len(parts)-1])
+			}
+		}
+		// panic 메시지에서 실제 에러 부분만 추출
+		lines := strings.Split(errorMsg, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "ccxtError") || strings.Contains(line, "InsufficientFunds") {
+				return fmt.Sprintf("CCXT 에러: %s", strings.TrimSpace(line))
+			}
+		}
+		return "CCXT 에러: 알 수 없는 오류"
+	}
+
+	// 일반적인 에러 메시지는 그대로 반환
+	return errorMsg
 }
 
 // SendSystemLog 시스템 로그를 전송합니다

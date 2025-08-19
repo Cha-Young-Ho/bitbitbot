@@ -46,16 +46,13 @@ func (kw *KuCoinWorker) run() {
 	ticker := time.NewTicker(time.Duration(kw.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	kw.sendLog("KuCoin 워커가 시작되었습니다", "info")
-	fmt.Printf("[KuCoin] 워커 시작 - 주문명: %s, 심볼: %s, 목표가: %.2f\n",
-		kw.order.Name, kw.order.Symbol, kw.order.Price)
+	// 시작 로그 제거
+	// KuCoin 워커 시작 로그 제거
 
 	for {
 		select {
 		case <-kw.ctx.Done():
 			kw.sendLog("KuCoin 워커가 중지되었습니다", "info")
-			fmt.Printf("[KuCoin] 워커 중지 - 주문명: %s\n", kw.order.Name)
 			return
 		case <-ticker.C:
 			kw.printStatus()
@@ -70,8 +67,7 @@ func (kw *KuCoinWorker) printStatus() {
 	kw.status.CheckCount++
 	kw.mu.Unlock()
 
-	fmt.Printf("[KuCoin] 상태 출력 - 주문명: %s, 심볼: %s, 목표가: %.2f, 수량: %.8f, 체크횟수: %d\n",
-		kw.order.Name, kw.order.Symbol, kw.order.Price, kw.order.Quantity, kw.status.CheckCount)
+	// KuCoin 상태 출력 로그 제거
 
 	kw.sendStatusLog(fmt.Sprintf("KuCoin 상태 확인 - 체크횟수: %d, 목표가: %.2f, 현재가: %.2f",
 		kw.status.CheckCount, kw.order.Price, kw.status.LastPrice))

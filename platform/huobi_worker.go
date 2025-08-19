@@ -46,10 +46,8 @@ func (hw *HuobiWorker) run() {
 	ticker := time.NewTicker(time.Duration(hw.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	hw.sendLog("Huobi 워커가 시작되었습니다", "info")
-	fmt.Printf("[Huobi] 워커 시작 - 주문명: %s, 심볼: %s, 목표가: %.2f\n",
-		hw.order.Name, hw.order.Symbol, hw.order.Price)
+	// 시작 로그 제거
+	// Huobi 워커 시작 로그 제거
 
 	for {
 		select {

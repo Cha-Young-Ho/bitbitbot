@@ -70,16 +70,14 @@ func (cw *CoinbaseWorker) run() {
 	ticker := time.NewTicker(time.Duration(cw.order.Term) * time.Second)
 	defer ticker.Stop()
 
-	// 시작 로그
-	cw.sendLog("Coinbase 워커가 시작되었습니다", "info")
-	fmt.Printf("[Coinbase] 워커 시작 - 주문명: %s, 심볼: %s, 지정가: %.2f, 주기: %.1f초\n",
-		cw.order.Name, cw.order.Symbol, cw.order.Price, cw.order.Term)
+	// 시작 로그 제거
+	// Coinbase 워커 시작 로그 제거
 
 	for {
 		select {
 		case <-cw.ctx.Done():
 			cw.sendLog("Coinbase 워커가 중지되었습니다", "info")
-			fmt.Printf("[Coinbase] 워커 중지 - 주문명: %s\n", cw.order.Name)
+			// Coinbase 워커 중지 로그 제거
 			return
 		case <-ticker.C:
 			cw.executeSellOrder()

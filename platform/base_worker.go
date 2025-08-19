@@ -4,7 +4,6 @@ import (
 	"bitbit-app/local_file"
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 )
@@ -97,8 +96,7 @@ func (bw *BaseWorker) run() {
 	ticker := time.NewTicker(time.Duration(bw.order.Term*1000) * time.Millisecond)
 	defer ticker.Stop()
 
-	// 시작 로그
-	bw.sendLog("워커가 시작되었습니다", "info")
+	// 시작 로그 제거
 
 	for {
 		select {
@@ -199,7 +197,6 @@ func (bw *BaseWorker) sendStatusLog(message string) {
 		OrderStatus: "running",
 	}
 
-	log.Printf("sendStatusLog 호출: %s - %s", bw.order.Name, message)
 	bw.manager.SendLog(workerLog)
 }
 
