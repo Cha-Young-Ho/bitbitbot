@@ -39,6 +39,13 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Extracted version: $VERSION"
         
+    - name: Install frontend dependencies
+      working-directory: frontend
+      run: npm ci
+        
+    - name: Generate Wails bindings
+      run: wails generate module
+        
     - name: Build macOS application
       run: |
         chmod +x ./build-mac.sh
