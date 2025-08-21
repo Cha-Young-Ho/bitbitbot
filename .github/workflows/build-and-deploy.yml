@@ -1,0 +1,122 @@
+name: Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+        
+    - name: Install frontend dependencies
+      working-directory: frontend
+      run: npm ci
+      
+    - name: Build frontend
+      working-directory: frontend
+      run: npm run build
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ap-northeast-2
+        
+    - name: Extract version from tag
+      id: version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Extracted version: $VERSION"
+        
+    - name: Build macOS application
+      run: |
+        chmod +x ./build-mac.sh
+        ./build-mac.sh ${{ steps.version.outputs.version }} ${{ secrets.ENVIRONMENT }} ${{ secrets.BUCKET_NAME }}
+        
+    - name: Build Windows application
+      run: |
+        chmod +x ./build-window.sh
+        ./build-window.sh ${{ steps.version.outputs.version }} ${{ secrets.ENVIRONMENT }} ${{ secrets.BUCKET_NAME }}
+        
+    - name: Update config.json based on version change
+      run: |
+        # Parse version components
+        IFS='.' read -ra VERSION_PARTS <<< "${{ steps.version.outputs.version }}"
+        MAJOR="${VERSION_PARTS[0]}"
+        MINOR="${VERSION_PARTS[1]}"
+        PATCH="${VERSION_PARTS[2]}"
+        
+        echo "Version components: Major=$MAJOR, Minor=$MINOR, Patch=$PATCH"
+        
+        # Download current config.json
+        aws s3 cp s3://${{ secrets.BUCKET_NAME }}/prod/config.json ./current-config.json
+        
+        # Read current config
+        CURRENT_MAIN_VER=$(jq -r '.mainVer' ./current-config.json)
+        CURRENT_MIN_VER=$(jq -r '.minVer' ./current-config.json)
+        
+        echo "Current config: mainVer=$CURRENT_MAIN_VER, minVer=$CURRENT_MIN_VER"
+        
+        # Parse current version components
+        IFS='.' read -ra CURRENT_MAIN_PARTS <<< "$CURRENT_MAIN_VER"
+        CURRENT_MAJOR="${CURRENT_MAIN_PARTS[0]}"
+        CURRENT_MINOR="${CURRENT_MAIN_PARTS[1]}"
+        CURRENT_PATCH="${CURRENT_MAIN_PARTS[2]}"
+        
+        # Determine new versions based on version change
+        NEW_MAIN_VER="${{ steps.version.outputs.version }}"
+        
+        if [ "$MAJOR" != "$CURRENT_MAJOR" ]; then
+          # Major version change: update both mainVer and minVer
+          NEW_MIN_VER="${{ steps.version.outputs.version }}"
+          echo "Major version change detected. Updating both mainVer and minVer to $NEW_MAIN_VER"
+        elif [ "$MINOR" != "$CURRENT_MINOR" ]; then
+          # Minor version change: update only mainVer
+          NEW_MIN_VER="$CURRENT_MIN_VER"
+          echo "Minor version change detected. Updating mainVer to $NEW_MAIN_VER, keeping minVer as $NEW_MIN_VER"
+        else
+          # Patch version change: update only mainVer
+          NEW_MIN_VER="$CURRENT_MIN_VER"
+          echo "Patch version change detected. Updating mainVer to $NEW_MAIN_VER, keeping minVer as $NEW_MIN_VER"
+        fi
+        
+        # Update config.json
+        jq --arg mainVer "$NEW_MAIN_VER" --arg minVer "$NEW_MIN_VER" \
+          '.mainVer = $mainVer | .minVer = $minVer' ./current-config.json > ./updated-config.json
+        
+        # Upload updated config.json
+        aws s3 cp ./updated-config.json s3://${{ secrets.BUCKET_NAME }}/prod/config.json
+        
+        echo "Updated config.json uploaded: mainVer=$NEW_MAIN_VER, minVer=$NEW_MIN_VER"
+        
+    - name: Upload build files to S3
+      run: |
+        # Upload macOS build
+        if [ -f "build/mac_build.${{ steps.version.outputs.version }}.zip" ]; then
+          aws s3 cp "build/mac_build.${{ steps.version.outputs.version }}.zip" "s3://${{ secrets.BUCKET_NAME }}/prod/mac_build.${{ steps.version.outputs.version }}.zip"
+          echo "Uploaded macOS build: mac_build.${{ steps.version.outputs.version }}.zip"
+        fi
+        
+        # Upload Windows build
+        if [ -f "build/window_build.${{ steps.version.outputs.version }}.zip" ]; then
+          aws s3 cp "build/window_build.${{ steps.version.outputs.version }}.zip" "s3://${{ secrets.BUCKET_NAME }}/prod/window_build.${{ steps.version.outputs.version }}.zip"
+          echo "Uploaded Windows build: window_build.${{ steps.version.outputs.version }}.zip"
+        fi
