@@ -21,6 +21,7 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.21'
+        cache: true
         
     - name: Install Wails CLI
       run: |
@@ -95,6 +96,7 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.21'
+        cache: true
         
     - name: Install Wails CLI
       run: |
@@ -144,8 +146,31 @@ jobs:
         
     - name: Build Windows application
       run: |
-        chmod +x ./build-window.sh
-        ./build-window.sh ${{ steps.version.outputs.version }} ${{ secrets.ENVIRONMENT }} ${{ secrets.BUCKET_NAME }}
+        # Windows용 Wails 빌드
+        wails build -platform windows/amd64 -ldflags "-X main.Version=${{ steps.version.outputs.version }} -X main.Environment=${{ secrets.ENVIRONMENT }} -X main.configUrl=https://${{ secrets.BUCKET_NAME }}.s3.ap-northeast-2.amazonaws.com/${{ secrets.ENVIRONMENT }}/config.json -X main.updateUrl=https://${{ secrets.BUCKET_NAME }}.s3.ap-northeast-2.amazonaws.com/${{ secrets.ENVIRONMENT }}/window_build.${{ steps.version.outputs.version }}.zip"
+        
+        # 빌드 결과 확인
+        if (Test-Path "build/bin/bitbit-app.exe") {
+          echo "Windows 빌드 완료: build/bin/bitbit-app.exe"
+          
+          # S3 업로드용 파일 생성
+          $S3_FILENAME = "window_build.${{ steps.version.outputs.version }}"
+          $S3_FILEPATH = "build/$S3_FILENAME"
+          $S3_ZIP_FILENAME = "window_build.${{ steps.version.outputs.version }}.zip"
+          $S3_ZIP_FILEPATH = "build/$S3_ZIP_FILENAME"
+          
+          # 실행 파일을 S3 업로드용으로 복사
+          Copy-Item "build/bin/bitbit-app.exe" "$S3_FILEPATH"
+          
+          # zip 파일 생성
+          Compress-Archive -Path "$S3_FILEPATH" -DestinationPath "$S3_ZIP_FILEPATH" -Force
+          
+          echo "S3 업로드용 파일 생성: $S3_FILEPATH"
+          echo "S3 업로드용 ZIP 파일 생성: $S3_ZIP_FILEPATH"
+        } else {
+          echo "빌드 실패: bitbit-app.exe 파일이 생성되지 않았습니다."
+          exit 1
+        }
         
     - name: Upload Windows build to S3
       run: |
