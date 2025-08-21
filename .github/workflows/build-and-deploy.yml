@@ -43,6 +43,24 @@ jobs:
       working-directory: frontend
       run: npm ci
         
+    - name: Create dummy wailsjs bindings
+      run: |
+        mkdir -p frontend/wailsjs/go/main
+        cat > frontend/wailsjs/go/main/App.ts << 'EOF'
+        // Dummy Wails bindings for build process
+        export const Login = async (userID: string, password: string) => ({ success: false, message: 'Dummy binding' });
+        export const Register = async (userID: string, password: string) => ({ success: false, message: 'Dummy binding' });
+        export const GetAccountInfo = async (userID: string) => ({ success: false, message: 'Dummy binding' });
+        export const GetPlatformInfo = async (userID: string) => ({ success: false, message: 'Dummy binding' });
+        export const AddPlatform = async (userID: string, platform: string, name: string, accessKey: string, secretKey: string, passwordPhrase: string) => ({ success: false, message: 'Dummy binding' });
+        export const UpdatePlatform = async (userID: string, oldPlatform: string, oldName: string, newPlatform: string, newName: string, accessKey: string, secretKey: string, passwordPhrase: string) => ({ success: false, message: 'Dummy binding' });
+        export const DeletePlatform = async (userID: string, platform: string, name: string) => ({ success: false, message: 'Dummy binding' });
+        export const CheckForUpdates = async () => ({ success: false, message: 'Dummy binding' });
+        export const PerformUpdate = async () => ({ success: false, message: 'Dummy binding' });
+        export const CheckPeriodicValidation = async () => ({ success: false, message: 'Dummy binding' });
+        export const GetPeriodicValidationNotification = async () => ({ success: false, message: 'Dummy binding' });
+        EOF
+        
     - name: Build frontend
       working-directory: frontend
       run: npm run build
