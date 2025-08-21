@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -55,6 +56,38 @@ func (a *App) startup(ctx context.Context) {
 
 	// 주기적 설정 검증 시작 (시작 즉시 1번 + 30분마다)
 	startPeriodicConfigCheck()
+}
+
+// GetFileLoadStatus 파일 로드 상태를 반환합니다
+func (a *App) GetFileLoadStatus() map[string]interface{} {
+	filePath := a.localFileHandler.GetFilePath()
+
+	// 파일 존재 여부 확인
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return map[string]interface{}{
+			"success":  false,
+			"message":  fmt.Sprintf("파일 접근 실패: %v", err),
+			"filePath": filePath,
+			"exists":   false,
+		}
+	}
+
+	// 파일 크기 확인
+	fileSize := fileInfo.Size()
+
+	// 파일 권한 확인
+	mode := fileInfo.Mode()
+
+	return map[string]interface{}{
+		"success":     true,
+		"message":     "파일 로드 성공",
+		"filePath":    filePath,
+		"exists":      true,
+		"fileSize":    fileSize,
+		"permissions": mode.String(),
+		"userCount":   len(a.localFileHandler.GetAllUsers()),
+	}
 }
 
 // LocalFileService 객체

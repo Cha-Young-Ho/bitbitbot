@@ -1,6 +1,22 @@
 // Global variables
 let currentUser: any = null;
 
+// 파일 로드 상태 확인 함수
+async function checkFileLoadStatus(): Promise<void> {
+    try {
+        const app = await import('../wailsjs/go/main/App');
+        const result = await (app as any).GetFileLoadStatus();
+        
+        if (result.success) {
+            alert(`파일 로드 성공!\n\n경로: ${result.filePath}\n파일 크기: ${result.fileSize} bytes\n권한: ${result.permissions}\n사용자 수: ${result.userCount}명`);
+        } else {
+            alert(`파일 로드 실패!\n\n오류: ${result.message}\n경로: ${result.filePath}`);
+        }
+    } catch (error) {
+        alert(`파일 상태 확인 중 오류 발생: ${error}`);
+    }
+}
+
 // Types
 interface LoginResult {
     success: boolean;
@@ -1478,6 +1494,9 @@ function initApp(): void {
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', async function() {
+    // 파일 로드 상태 확인
+    await checkFileLoadStatus();
+    
     // 업데이트 체크
     await checkForUpdatesOnStartup();
     

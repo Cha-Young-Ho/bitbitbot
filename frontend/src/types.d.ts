@@ -11,6 +11,7 @@ declare global {
                     PerformUpdate: () => Promise<any>;
                     CheckPeriodicValidation: () => Promise<any>;
                     GetPeriodicValidationNotification: () => Promise<any>;
+                    GetFileLoadStatus: () => Promise<any>;
                 };
             };
         };

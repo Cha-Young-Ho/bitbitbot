@@ -115,6 +115,11 @@ func NewHandler() *Handler {
 	directoryPath := filepath.Join(homeDir, "bit_info")
 	filePath := filepath.Join(directoryPath, "bitbit_data.json")
 
+	// 디렉터리 생성 시도
+	if err := os.MkdirAll(directoryPath, 0755); err != nil {
+		log.Printf("디렉터리 생성 실패: %v", err)
+	}
+
 	handler := &Handler{
 		filePath: filePath,
 		data:     []UserData{},
@@ -123,6 +128,8 @@ func NewHandler() *Handler {
 	// 초기 데이터 로드
 	if err := handler.loadData(); err != nil {
 		log.Printf("데이터 로드 실패: %v", err)
+		// 실패 시 빈 데이터로 시작
+		handler.data = []UserData{}
 	}
 
 	return handler
@@ -130,16 +137,21 @@ func NewHandler() *Handler {
 
 // loadData 로컬 파일에서 데이터를 로드합니다
 func (h *Handler) loadData() error {
+	log.Printf("데이터 로드 시작: %s", h.filePath)
+
 	// 디렉터리 생성
 	directoryPath := filepath.Dir(h.filePath)
 	if err := os.MkdirAll(directoryPath, 0755); err != nil {
+		log.Printf("디렉터리 생성 실패: %v", err)
 		return fmt.Errorf("디렉터리 생성 실패: %w", err)
 	}
+	log.Printf("디렉터리 생성 완료: %s", directoryPath)
 
 	// 파일 존재 여부 확인
 	fileInfo, err := os.Stat(h.filePath)
 	if os.IsNotExist(err) {
 		// 파일이 없으면 빈 데이터로 시작
+		log.Printf("파일이 존재하지 않음: %s", h.filePath)
 		h.data = []UserData{}
 		return nil
 	}
@@ -151,25 +163,31 @@ func (h *Handler) loadData() error {
 	}
 
 	// 파일 읽기
+	log.Printf("파일 읽기 시도: %s", h.filePath)
 	data, err := os.ReadFile(h.filePath)
 	if err != nil {
+		log.Printf("파일 읽기 실패: %v", err)
 		return fmt.Errorf("파일 읽기 실패: %w", err)
 	}
+	log.Printf("파일 읽기 성공: %d bytes", len(data))
 
 	// 빈 문자열이나 공백만 있는 경우 처리
 	trimmedData := strings.TrimSpace(string(data))
 	if trimmedData == "" {
+		log.Printf("파일 내용이 비어있음")
 		h.data = []UserData{}
 		return nil
 	}
 
 	// JSON 파싱
+	log.Printf("JSON 파싱 시도")
 	if err := json.Unmarshal([]byte(trimmedData), &h.data); err != nil {
 		// JSON 파싱 실패 시 빈 데이터로 초기화
 		log.Printf("JSON 파싱 실패: %v", err)
 		h.data = []UserData{}
 		return nil
 	}
+	log.Printf("JSON 파싱 성공: %d명의 사용자 로드됨", len(h.data))
 	return nil
 }
 
@@ -187,6 +205,11 @@ func (h *Handler) saveData() error {
 	}
 
 	return nil
+}
+
+// GetFilePath 파일 경로를 반환합니다
+func (h *Handler) GetFilePath() string {
+	return h.filePath
 }
 
 // GetUserByID 사용자 ID로 사용자 데이터를 조회합니다
