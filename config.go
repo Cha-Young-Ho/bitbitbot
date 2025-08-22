@@ -158,7 +158,7 @@ func checkVersion() error {
 		return fmt.Errorf("required_update:min_ver_failed")
 	}
 
-	// MainVer 체크 (선택적 업데이트)
+	// MainVer 체크 (선택적 업데이트) - 무조건 mainVer로 업데이트
 	if config.MainVer != "" && currentVersion < config.MainVer {
 		return fmt.Errorf("optional_update:main_ver_failed")
 	}
@@ -420,14 +420,11 @@ func getUpdateUrl() string {
 		Environment = "prod" // 기본값
 	}
 
-	// 운영체제별 파일명 생성 (업데이트할 버전 사용)
+	// 운영체제별 파일명 생성 (무조건 mainVer로 업데이트)
 	var fileName string
 	updateVersion := config.MainVer
-	if config.MinVer != "" && getVersion() < config.MinVer {
-		updateVersion = config.MinVer // 필수 업데이트인 경우
-	}
 
-	log.Printf("업데이트 버전 결정: MainVer=%s, MinVer=%s, 선택된 버전=%s", config.MainVer, config.MinVer, updateVersion)
+	log.Printf("업데이트 버전 결정: MainVer=%s, MinVer=%s, 선택된 버전=%s (무조건 mainVer 사용)", config.MainVer, config.MinVer, updateVersion)
 
 	switch runtime.GOOS {
 	case "windows":

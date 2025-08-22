@@ -1814,8 +1814,8 @@ function showUpdateDialog(isRequired: boolean, currentVersion: string, requiredV
         
         const title = isRequired ? '필수 업데이트가 있습니다' : '업데이트가 있습니다';
         const message = isRequired 
-            ? `업데이트를 하지 않으면 프로그램이 종료됩니다.\n현재 버전: ${currentVersion}\n필수 버전: ${requiredVersion}`
-            : `업데이트하시겠습니까?\n현재 버전: ${currentVersion}\n권장 버전: ${requiredVersion}`;
+            ? `업데이트를 하지 않으면 프로그램이 종료됩니다.\n현재 버전: ${currentVersion}\n업데이트 버전: ${requiredVersion}`
+            : `업데이트하시겠습니까?\n현재 버전: ${currentVersion}\n업데이트 버전: ${requiredVersion}`;
 
         dialog.innerHTML = `
             <div class="update-dialog">
@@ -1983,6 +1983,7 @@ async function checkForUpdatesOnStartup(): Promise<void> {
         
         if (result.updateRequired) {
             // 필수 업데이트인지 선택적 업데이트인지에 따라 다른 버전 정보 사용
+            // 선택적 업데이트의 경우 무조건 mainVer 사용 (백엔드에서 설정됨)
             const versionToShow = result.isRequired ? result.requiredVersion : result.recommendedVersion;
             
             const shouldUpdate = await showUpdateDialog(
@@ -2034,6 +2035,7 @@ async function handleRequiredUpdate(): Promise<void> {
     try {
         const result = await window.go.main.App.CheckForUpdates();
         if (result.success && result.updateRequired) {
+            // 선택적 업데이트의 경우 무조건 mainVer 사용 (백엔드에서 설정됨)
             const versionToShow = result.isRequired ? result.requiredVersion : result.recommendedVersion;
             const shouldUpdate = await showUpdateDialog(
                 result.isRequired,
@@ -2062,6 +2064,7 @@ async function handleOptionalUpdate(): Promise<void> {
     try {
         const result = await window.go.main.App.CheckForUpdates();
         if (result.success && result.updateRequired) {
+            // 선택적 업데이트의 경우 무조건 mainVer 사용 (백엔드에서 설정됨)
             const versionToShow = result.isRequired ? result.requiredVersion : result.recommendedVersion;
             const shouldUpdate = await showUpdateDialog(
                 result.isRequired,
@@ -2089,6 +2092,7 @@ async function handlePeriodicValidation(): Promise<void> {
                 // 버전 업데이트 필요
                 const updateResult = await window.go.main.App.CheckForUpdates();
                 if (updateResult.success && updateResult.updateRequired) {
+                    // 선택적 업데이트의 경우 무조건 mainVer 사용 (백엔드에서 설정됨)
                     const versionToShow = updateResult.isRequired ? updateResult.requiredVersion : updateResult.recommendedVersion;
                     const shouldUpdate = await showUpdateDialog(
                         updateResult.isRequired,

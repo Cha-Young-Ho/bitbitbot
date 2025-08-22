@@ -381,19 +381,19 @@ func (a *App) CheckForUpdates() map[string]interface{} {
 	// 프로그램 상태 체크 (running, whiteList, version)
 	if err := checkProgramStatus(); err != nil {
 		if strings.Contains(err.Error(), "required_update") {
-			// 필수 업데이트
+			// 필수 업데이트 - 무조건 mainVer로 업데이트
 			currentVersion := getVersion()
 			return map[string]interface{}{
 				"success":            true,
 				"updateRequired":     true,
 				"isRequired":         true,
 				"currentVersion":     currentVersion,
-				"requiredVersion":    config.MinVer,
-				"recommendedVersion": config.MinVer,
+				"requiredVersion":    config.MainVer,
+				"recommendedVersion": config.MainVer,
 				"message":            "필수 업데이트가 필요합니다. 프로그램을 사용하려면 업데이트가 필요합니다.",
 			}
 		} else if strings.Contains(err.Error(), "optional_update") {
-			// 선택적 업데이트
+			// 선택적 업데이트 - 무조건 mainVer로 업데이트
 			currentVersion := getVersion()
 			return map[string]interface{}{
 				"success":            true,
