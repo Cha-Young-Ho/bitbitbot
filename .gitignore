@@ -123,3 +123,4 @@ temp/
 # Application data
 bitbit_data.json
 bitbit-app*
+upload.sh
