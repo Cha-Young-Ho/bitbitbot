@@ -12,6 +12,10 @@ declare global {
                     CheckPeriodicValidation: () => Promise<any>;
                     GetPeriodicValidationNotification: () => Promise<any>;
                     GetFileLoadStatus: () => Promise<any>;
+                    TestS3ConnectionFailure: () => Promise<any>;
+                    GetS3FailureCountForTesting: () => Promise<any>;
+                    ManualPeriodicCheck: () => Promise<any>;
+                    StopAllWorkersAndExit: () => Promise<any>;
                 };
             };
         };

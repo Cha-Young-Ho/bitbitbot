@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 // App struct
@@ -517,6 +518,13 @@ func (a *App) GetPeriodicValidationNotification() map[string]interface{} {
 				"type":            "invalid_access",
 				"message":         "잘못된 접근입니다.",
 			}
+		} else if notification == "abnormal_access" {
+			return map[string]interface{}{
+				"success":         false,
+				"hasNotification": true,
+				"type":            "abnormal_access",
+				"message":         "비정상접근입니다.",
+			}
 		}
 	default:
 		// 알림이 없음
@@ -525,5 +533,102 @@ func (a *App) GetPeriodicValidationNotification() map[string]interface{} {
 	return map[string]interface{}{
 		"success":         true,
 		"hasNotification": false,
+	}
+}
+
+// TestS3ConnectionFailure S3 연결 실패를 테스트하기 위한 함수 (개발용)
+func (a *App) TestS3ConnectionFailure() map[string]interface{} {
+	log.Printf("S3 연결 실패 테스트 시작")
+
+	// 실패 카운터 초기화
+	resetS3FailureCount()
+
+	// 의도적으로 잘못된 URL로 테스트
+	originalConfigUrl := configUrl
+	configUrl = "https://invalid-s3-url-that-will-fail.com/config.json"
+
+	// 재시도 로직 테스트
+	if err := loadConfigWithRetry(); err != nil {
+		log.Printf("예상된 S3 연결 실패: %v", err)
+		return map[string]interface{}{
+			"success": false,
+			"message": "S3 연결 실패 테스트 완료",
+			"error":   err.Error(),
+		}
+	}
+
+	// 원래 URL 복원
+	configUrl = originalConfigUrl
+
+	return map[string]interface{}{
+		"success": true,
+		"message": "S3 연결 실패 테스트 완료",
+	}
+}
+
+// GetS3FailureCountForTesting 테스트용 S3 실패 카운터 조회 함수
+func (a *App) GetS3FailureCountForTesting() map[string]interface{} {
+	count := getS3FailureCount()
+	return map[string]interface{}{
+		"success": true,
+		"count":   count,
+		"message": fmt.Sprintf("현재 S3 실패 카운터: %d", count),
+	}
+}
+
+// StopAllWorkersAndExit 모든 워커를 중지하고 프로그램을 종료합니다
+func (a *App) StopAllWorkersAndExit() map[string]interface{} {
+	log.Printf("모든 워커 중지 및 프로그램 종료 시작")
+
+	// 모든 사용자의 워커 중지
+	users := a.localFileHandler.GetAllUsers()
+	for _, user := range users {
+		log.Printf("사용자 %s의 모든 워커 중지", user.ID)
+		result := a.platformHandler.StopAllWorkersForUser(user.ID)
+		if success, ok := result["success"].(bool); !ok || !success {
+			log.Printf("사용자 %s의 워커 중지 실패: %v", user.ID, result)
+		}
+	}
+
+	// 웹소켓 서버 중지
+	if a.wsServer != nil {
+		log.Printf("웹소켓 서버 중지")
+		if err := a.wsServer.Stop(); err != nil {
+			log.Printf("웹소켓 서버 중지 실패: %v", err)
+		}
+	}
+
+	log.Printf("모든 워커 중지 완료, 프로그램 종료")
+
+	// 잠시 대기 후 프로그램 종료
+	go func() {
+		time.Sleep(1 * time.Second)
+		log.Printf("프로그램 종료")
+		os.Exit(0)
+	}()
+
+	return map[string]interface{}{
+		"success": true,
+		"message": "모든 워커가 중지되었습니다. 프로그램을 종료합니다.",
+	}
+}
+
+// ManualPeriodicCheck 수동으로 주기적 검사를 실행합니다 (테스트용)
+func (a *App) ManualPeriodicCheck() map[string]interface{} {
+	log.Printf("수동 주기적 검사 실행")
+
+	// 주기적 검증 수행
+	if err := performConfigValidation(); err != nil {
+		log.Printf("수동 주기적 검사 실패: %v", err)
+		return map[string]interface{}{
+			"success": false,
+			"message": "주기적 검사 실패",
+			"error":   err.Error(),
+		}
+	}
+
+	return map[string]interface{}{
+		"success": true,
+		"message": "주기적 검사 성공",
 	}
 }

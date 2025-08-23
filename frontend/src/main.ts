@@ -1500,8 +1500,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 업데이트 체크
     await checkForUpdatesOnStartup();
     
-    // 주기적 알림 확인 (5초마다)
-    setInterval(checkPeriodicNotifications, 5000);
+    // 주기적 알림 확인 (30초마다)
+    setInterval(checkPeriodicNotifications, 30000);
     
     initApp();
 });
@@ -1965,6 +1965,60 @@ function showInvalidAccessDialog(): void {
     });
 }
 
+// 비정상 접근 다이얼로그 표시 (S3 연결 실패)
+function showAbnormalAccessDialog(): void {
+    const existingDialog = document.getElementById('abnormal-access-dialog');
+    if (existingDialog) {
+        existingDialog.remove();
+    }
+
+    const dialog = document.createElement('div');
+    dialog.id = 'abnormal-access-dialog';
+    dialog.className = 'update-dialog-overlay';
+    
+    dialog.innerHTML = `
+        <div class="update-dialog">
+            <div class="update-dialog-header">
+                <h3>비정상접근입니다.</h3>
+            </div>
+            <div class="update-dialog-body">
+                <p>S3 서버 연결에 실패했습니다.</p>
+                <p>3회 재시도 후에도 연결이 되지 않아 프로그램을 종료합니다.</p>
+                <p>모든 워커가 중지되고 프로그램이 종료됩니다.</p>
+                <p>네트워크 연결을 확인하고 다시 시도해주세요.</p>
+            </div>
+            <div class="update-dialog-footer">
+                <button id="exit-btn" class="btn btn-primary">확인</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // 이벤트 리스너 추가
+    document.getElementById('exit-btn')?.addEventListener('click', async () => {
+        const button = document.getElementById('exit-btn') as HTMLButtonElement;
+        if (button) {
+            button.disabled = true;
+            button.textContent = '워커 중지 중...';
+        }
+        
+        try {
+            // 모든 워커 중지 및 프로그램 종료
+            const result = await window.go.main.App.StopAllWorkersAndExit();
+            console.log('워커 중지 결과:', result);
+        } catch (error) {
+            console.error('워커 중지 실패:', error);
+            // 워커 중지 실패 시에도 프로그램 종료
+            if ((window as any).runtime) {
+                (window as any).runtime.Quit();
+            } else {
+                window.close();
+            }
+        }
+    });
+}
+
 // 앱 시작 시 업데이트 체크
 async function checkForUpdatesOnStartup(): Promise<void> {
     try {
@@ -2023,6 +2077,9 @@ async function checkPeriodicNotifications(): Promise<void> {
             } else if (result.type === 'invalid_access') {
                 // 잘못된 접근 - 워커 중지 후 종료 다이얼로그
                 showInvalidAccessDialog();
+            } else if (result.type === 'abnormal_access') {
+                // 비정상 접근 - S3 연결 실패로 인한 프로그램 종료
+                showAbnormalAccessDialog();
             }
         }
     } catch (error) {

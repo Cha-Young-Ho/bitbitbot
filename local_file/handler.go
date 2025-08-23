@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -112,11 +113,33 @@ func NewHandler() *Handler {
 		return nil
 	}
 
-	directoryPath := filepath.Join(homeDir, "bit_info")
+	// 운영체제별 디렉토리 설정
+	var directoryPath string
+	if runtime.GOOS == "windows" {
+		// Windows: AppData\Roaming 사용 (Windows 표준)
+		appDataDir := os.Getenv("APPDATA")
+		if appDataDir == "" {
+			appDataDir = filepath.Join(homeDir, "AppData", "Roaming")
+		}
+		directoryPath = filepath.Join(appDataDir, "BitBit")
+		log.Printf("Windows AppData 경로 사용: %s", appDataDir)
+	} else {
+		// macOS/Linux: 홈 디렉터리 사용
+		directoryPath = filepath.Join(homeDir, "bit_info")
+		log.Printf("macOS/Linux 홈 디렉터리 사용: %s", homeDir)
+	}
+
 	filePath := filepath.Join(directoryPath, "bitbit_data.json")
 
-	// 디렉터리 생성 시도
-	if err := os.MkdirAll(directoryPath, 0755); err != nil {
+	log.Printf("파일 경로 설정: %s", filePath)
+
+	// 디렉터리 생성 시도 (Windows에서는 0755 대신 0777 사용)
+	perm := os.FileMode(0755)
+	if runtime.GOOS == "windows" {
+		perm = os.FileMode(0777)
+	}
+
+	if err := os.MkdirAll(directoryPath, perm); err != nil {
 		log.Printf("디렉터리 생성 실패: %v", err)
 	}
 

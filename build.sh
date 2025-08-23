@@ -1,21 +1,53 @@
 #!/bin/bash
 
 # 통합 빌드 스크립트
-# 사용법: ./build.sh <VERSION> <BUCKET_NAME>
-# 예시: ./build.sh 1.0.2 yh-bitbit-bucket
+# 사용법: ./build.sh [VERSION] [BUCKET_NAME]
+# 또는 ./build.sh (사용자 입력 모드)
 
 set -e
 
-# 인자 확인
-if [ $# -ne 2 ]; then
-    echo "사용법: $0 <VERSION> <BUCKET_NAME>"
-    echo "예시: $0 1.0.2 yh-bitbit-bucket"
+# 사용자 입력 처리
+if [ $# -eq 0 ]; then
+    # 인자가 없으면 사용자 입력 모드
+    echo "=== 빌드 설정 입력 ==="
+    echo -n "버전을 입력해주세요 : "
+    read VERSION
+    echo -n "환경을 입력해주세요 : "
+    read ENVIRONMENT
+    if [ -z "$ENVIRONMENT" ]; then
+        ENVIRONMENT="prod"
+    fi
+    echo -n "버킷명을 입력해주세요 : "
+    read BUCKET_NAME
+    echo ""
+elif [ $# -eq 1 ]; then
+    # 버전만 입력된 경우
+    VERSION=$1
+    ENVIRONMENT="prod"
+    echo -n "버킷명을 입력해주세요 : "
+    read BUCKET_NAME
+    echo ""
+elif [ $# -eq 2 ]; then
+    # 버전과 버킷명이 입력된 경우
+    VERSION=$1
+    BUCKET_NAME=$2
+    ENVIRONMENT="prod"
+elif [ $# -eq 3 ]; then
+    # 모든 인자가 입력된 경우
+    VERSION=$1
+    ENVIRONMENT=$2
+    BUCKET_NAME=$3
+else
+    echo "사용법: $0 [VERSION] [BUCKET_NAME]"
+    echo "또는 $0 (사용자 입력 모드)"
     exit 1
 fi
 
-VERSION=$1
-BUCKET_NAME=$2
-ENVIRONMENT="prod"
+# 입력값 검증
+if [ -z "$VERSION" ] || [ -z "$BUCKET_NAME" ]; then
+    echo "❌ 오류: 버전과 버킷명은 필수입니다."
+    exit 1
+fi
 
 echo "=== 통합 빌드 시작 ==="
 echo "버전: $VERSION"
