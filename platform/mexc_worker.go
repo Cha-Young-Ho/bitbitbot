@@ -4,10 +4,7 @@ import (
 	"bitbit-app/local_file"
 	"context"
 	"fmt"
-	"strings"
 	"time"
-
-	ccxt "github.com/ccxt/ccxt/go/v4"
 )
 
 // MexcWorker Mexc 플랫폼용 워커
@@ -15,35 +12,14 @@ type MexcWorker struct {
 	*BaseWorker
 	accessKey string
 	secretKey string
-	exchange  ccxt.IExchange
 }
 
 // NewMexcWorker 새로운 Mexc 워커를 생성합니다
 func NewMexcWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *MexcWorker {
-	// CCXT 거래소 인스턴스 생성
-	exchangeConfig := map[string]interface{}{
-		"apiKey":          accessKey,
-		"secret":          secretKey,
-		"timeout":         30000, // 30초
-		"sandbox":         false, // 실제 거래
-		"enableRateLimit": true,
-	}
-
-	// Password Phrase가 있으면 추가
-	if passwordPhrase != "" {
-		exchangeConfig["password"] = passwordPhrase
-	}
-
-	exchange := ccxt.CreateExchange("mexc", exchangeConfig)
-
-	// BaseWorker 생성
-	baseWorker := NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase)
-
 	return &MexcWorker{
-		BaseWorker: baseWorker,
+		BaseWorker: NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase),
 		accessKey:  accessKey,
 		secretKey:  secretKey,
-		exchange:   exchange,
 	}
 }
 
@@ -60,102 +36,41 @@ func (mw *MexcWorker) Start(ctx context.Context) error {
 	mw.isRunning = true
 	mw.status.IsRunning = true
 
-	// 워커 고루틴 시작 (Mexc 자체 run 사용)
+	// 워커 고루틴 시작
 	go mw.run()
 	return nil
 }
 
-// run 워커의 메인 루프 (Mexc 전용)
+// run 워커의 메인 루프
 func (mw *MexcWorker) run() {
-	ticker := time.NewTicker(time.Duration(mw.order.Term) * time.Second)
+	// Term(초)이 소수일 수 있으므로 밀리초로 변환하여 절삭 방지, 최소 1ms 보장
+	intervalMs := int64(mw.order.Term * 1000)
+	if intervalMs < 1 {
+		intervalMs = 1
+	}
+	ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
 	defer ticker.Stop()
-
-	// 시작 로그 제거
-	// Mexc 워커 시작 로그 제거
 
 	for {
 		select {
 		case <-mw.ctx.Done():
-			mw.sendLog("Mexc 워커가 중지되었습니다", "info")
-			// Mexc 워커 중지 로그 제거
+			mw.sendLog("MEXC 워커가 중지되었습니다", "info")
 			return
 		case <-ticker.C:
-			mw.executeSellOrder()
+			// 매 tick마다 반드시 실행: 비동기 고루틴으로 처리 (이전 요청 진행 중이어도 새 요청 즉시 시작)
+			go mw.executeSellOrder(mw.order.Price)
 		}
 	}
 }
 
-// executeSellOrder 지정가 매도 주문을 실행합니다
-func (mw *MexcWorker) executeSellOrder() {
-	// BaseWorker의 상태 업데이트
-	mw.mu.Lock()
-	mw.status.LastCheck = time.Now()
-	mw.status.CheckCount++
-	mw.mu.Unlock()
-
-	// 거래소가 nil인 경우 에러 처리
-	if mw.exchange == nil {
-		mw.mu.Lock()
-		mw.status.ErrorCount++
-		mw.status.LastError = "거래소가 초기화되지 않았습니다"
-		mw.mu.Unlock()
-
-		mw.sendLog("거래소가 초기화되지 않았습니다", "error")
-		return
-	}
-
-	// Mexc 심볼 형식으로 변환 (예: BTC/USDT -> BTC_USDT)
-	mexcSymbol := mw.convertToMexcSymbol(mw.order.Symbol)
-
-	// 디버깅을 위한 로그 추가
-	mw.sendLog(fmt.Sprintf("주문 시도 - 심볼: %s, 수량: %.8f, 가격: %.2f",
-		mexcSymbol, mw.order.Quantity, mw.order.Price), "info")
-
-	// CCXT를 사용한 지정가 매도 주문
-	orderID, err := mw.exchange.CreateLimitSellOrder(
-		mexcSymbol,        // 심볼 (예: BTC_USDT)
-		mw.order.Quantity, // 수량
-		mw.order.Price,    // 가격
-	)
-
-	if err != nil {
-		mw.mu.Lock()
-		mw.status.ErrorCount++
-		mw.status.LastError = err.Error()
-		mw.mu.Unlock()
-
-		mw.sendLog(fmt.Sprintf("매도 주문 실패: %v", err), "error")
-		mw.manager.SendSystemLog("MexcWorker", "executeSellOrder",
-			fmt.Sprintf("매도 주문 실패: %v", err), "error", "", mw.order.Name, err.Error())
-		return
-	}
-
-	// 성공 로그
-	mw.sendLog(fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		mw.order.Price, mw.order.Quantity, orderID), "success", mw.order.Price, mw.order.Quantity)
+// executeSellOrder MEXC에서 매도 주문을 실행합니다
+func (mw *MexcWorker) executeSellOrder(price float64) {
+	// MEXC 거래소는 아직 구현되지 않았습니다
+	mw.sendLog("MEXC 거래소는 아직 구현되지 않았습니다", "warning", price, mw.order.Quantity)
+	mw.manager.SendSystemLog("MexcWorker", "executeSellOrder", "MEXC 거래소는 아직 구현되지 않았습니다", "warning", "", mw.order.Name, "")
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
 func (mw *MexcWorker) GetPlatformName() string {
 	return "Mexc"
-}
-
-// convertToMexcSymbol Mexc 심볼 형식으로 변환합니다
-func (mw *MexcWorker) convertToMexcSymbol(symbol string) string {
-	// 사용자 입력: "BTC/USDT" -> Mexc 형식: "BTC_USDT"
-	parts := strings.Split(symbol, "/")
-	if len(parts) != 2 {
-		mw.sendLog(fmt.Sprintf("잘못된 심볼 형식: %s (올바른 형식: BTC/USDT)", symbol), "warning")
-		return symbol
-	}
-
-	base := strings.TrimSpace(strings.ToUpper(parts[0]))  // BTC
-	quote := strings.TrimSpace(strings.ToUpper(parts[1])) // USDT
-
-	// Mexc 마켓 형식으로 변환
-	mexcSymbol := base + "_" + quote // "BTC_USDT"
-
-	mw.sendLog(fmt.Sprintf("심볼 변환: %s -> %s", symbol, mexcSymbol), "info")
-
-	return mexcSymbol
 }

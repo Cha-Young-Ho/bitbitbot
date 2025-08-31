@@ -7,27 +7,20 @@ import (
 	"time"
 )
 
-// BithumbWorker Bithumb 플랫폼용 워커
+// BithumbWorker 빗썸 플랫폼용 워커
 type BithumbWorker struct {
 	*BaseWorker
 	accessKey string
 	secretKey string
 }
 
-// NewBithumbWorker 새로운 Bithumb 워커를 생성합니다
+// NewBithumbWorker 새로운 빗썸 워커를 생성합니다
 func NewBithumbWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *BithumbWorker {
 	return &BithumbWorker{
 		BaseWorker: NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase),
 		accessKey:  accessKey,
 		secretKey:  secretKey,
 	}
-}
-
-// getCurrentPrice Bithumb에서 현재 가격을 조회합니다
-func (bw *BithumbWorker) getCurrentPrice() (float64, error) {
-	// Bithumb API를 사용하여 현재가 조회
-	// TODO: 실제 Bithumb API 구현
-	return 0, fmt.Errorf("bithumb API가 아직 구현되지 않았습니다")
 }
 
 // Start 워커를 시작합니다
@@ -50,42 +43,31 @@ func (bw *BithumbWorker) Start(ctx context.Context) error {
 
 // run 워커의 메인 루프
 func (bw *BithumbWorker) run() {
-	ticker := time.NewTicker(time.Duration(bw.order.Term) * time.Second)
+	// Term(초)이 소수일 수 있으므로 밀리초로 변환하여 절삭 방지, 최소 1ms 보장
+	intervalMs := int64(bw.order.Term * 1000)
+	if intervalMs < 1 {
+		intervalMs = 1
+	}
+	ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
 	defer ticker.Stop()
-
-	// 시작 로그 제거
-	// Bithumb 워커 시작 로그 제거
 
 	for {
 		select {
 		case <-bw.ctx.Done():
-			bw.sendLog("Bithumb 워커가 중지되었습니다", "info")
-			fmt.Printf("[Bithumb] 워커 중지 - 주문명: %s\n", bw.order.Name)
+			bw.sendLog("빗썸 워커가 중지되었습니다", "info")
 			return
 		case <-ticker.C:
-			bw.printStatus()
+			// 매 tick마다 반드시 실행: 비동기 고루틴으로 처리 (이전 요청 진행 중이어도 새 요청 즉시 시작)
+			go bw.executeSellOrder(bw.order.Price)
 		}
 	}
 }
 
-// printStatus 현재 상태를 출력합니다
-func (bw *BithumbWorker) printStatus() {
-	bw.mu.Lock()
-	bw.status.LastCheck = time.Now()
-	bw.status.CheckCount++
-	bw.mu.Unlock()
-
-	// Bithumb 상태 출력 로그 제거
-
-	bw.sendStatusLog(fmt.Sprintf("Bithumb 상태 확인 - 체크횟수: %d, 목표가: %.2f, 현재가: %.2f",
-		bw.status.CheckCount, bw.order.Price, bw.status.LastPrice))
-}
-
-// executeSellOrder Bithumb에서 매도 주문을 실행합니다
+// executeSellOrder 빗썸에서 매도 주문을 실행합니다
 func (bw *BithumbWorker) executeSellOrder(price float64) {
-	bw.sendLog(fmt.Sprintf("Bithumb 매도 주문 실행 (가격: %.2f, 수량: %.8f)", price, bw.order.Quantity), "order", price, bw.order.Quantity)
-	fmt.Printf("[Bithumb] 매도 주문 실행 - 주문명: %s, 가격: %.2f, 수량: %.8f\n",
-		bw.order.Name, price, bw.order.Quantity)
+	// 빗썸 거래소는 아직 구현되지 않았습니다
+	bw.sendLog("빗썸 거래소는 아직 구현되지 않았습니다", "warning", price, bw.order.Quantity)
+	bw.manager.SendSystemLog("BithumbWorker", "executeSellOrder", "빗썸 거래소는 아직 구현되지 않았습니다", "warning", "", bw.order.Name, "")
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
