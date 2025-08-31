@@ -38,7 +38,9 @@ func (wf *WorkerFactory) CreateWorker(order local_file.SellOrder, accessKey, sec
 	case "mexc":
 		return NewMexcWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "kucoin":
-		return NewKuCoinWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		return NewKucoinWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+	case "gate":
+		return NewGateWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "coinbase":
 		return NewCoinbaseWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
 	case "coinone":
@@ -64,7 +66,8 @@ func (wf *WorkerFactory) GetSupportedPlatforms() []string {
 		"Bitget",
 		"Huobi",
 		"Mexc",
-		"KuCoin",
+		"Kucoin",
+		"Gate",
 		"Coinbase",
 		"Coinone",
 		"Korbit",
