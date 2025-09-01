@@ -3,343 +3,524 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BitBit - 암호화폐 거래 플랫폼 관리</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./style.css">
+    <title>BitBit - 간단한 워커 관리</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .config-section {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .config-section h2 {
+            color: #1e293b;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .log-section {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            color: white;
+        }
+
+        .log-section h2 {
+            color: white;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .log-container {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 5px 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-timestamp {
+            color: #64748b;
+            font-size: 0.8rem;
+        }
+
+        .log-level-info {
+            color: #60a5fa;
+        }
+
+        .log-level-success {
+            color: #34d399;
+        }
+
+        .log-level-error {
+            color: #f87171;
+        }
+
+        .log-message {
+            color: #e2e8f0;
+        }
+
+        .status-bar {
+            background: #f1f5f9;
+            border-top: 1px solid #e2e8f0;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ef4444;
+        }
+
+        .status-dot.running {
+            background: #34d399;
+        }
+
+        .status-text {
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .version-info {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+    </style>
 </head>
 <body>
-    <div id="app">
-        <!-- 홈페이지 -->
-        <div id="home-page" class="page active">
-            <div class="container">
-                <div class="welcome-card">
-                    <h1>BitBit에 오신 것을 환영합니다!</h1>
-                    <p>암호화폐 거래 플랫폼 관리 시스템</p>
-                    <div class="button-group">
-                        <button onclick="showPage('login')" class="btn btn-primary">로그인</button>
-                        <button onclick="showPage('register')" class="btn btn-secondary">회원가입</button>
+    <div class="container">
+        <div class="header">
+            <h1>BitBit</h1>
+            <p>간단한 워커 관리 시스템</p>
+        </div>
+
+        <div class="content">
+            <!-- 설정 섹션 -->
+            <div class="config-section">
+                <h2>워커 설정</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="exchange">거래소</label>
+                        <select id="exchange">
+                            <option value="">거래소 선택</option>
+                            <option value="Upbit">Upbit</option>
+                            <option value="Bithumb">Bithumb</option>
+                            <option value="Binance">Binance</option>
+                            <option value="Bybit">Bybit</option>
+                            <option value="KuCoin">KuCoin</option>
+                            <option value="Coinbase">Coinbase</option>
+                            <option value="Huobi">Huobi</option>
+                            <option value="Mexc">Mexc</option>
+                            <option value="Bitget">Bitget</option>
+                            <option value="Coinone">Coinone</option>
+                            <option value="Korbit">Korbit</option>
+                            <option value="OKX">OKX</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="symbol">심볼</label>
+                        <input type="text" id="symbol" placeholder="예: TRX/USDT">
+                    </div>
+                    <div class="form-group">
+                        <label for="accessKey">Access Key</label>
+                        <input type="text" id="accessKey" placeholder="Access Key 입력">
+                    </div>
+                    <div class="form-group">
+                        <label for="secretKey">Secret Key</label>
+                        <input type="text" id="secretKey" placeholder="Secret Key 입력">
+                    </div>
+                    <div class="form-group">
+                        <label for="passwordPhrase">Password Phrase</label>
+                        <input type="text" id="passwordPhrase" placeholder="Password Phrase (필요시)">
+                    </div>
+                    <div class="form-group">
+                        <label for="requestInterval">요청 간격 (초)</label>
+                        <input type="number" id="requestInterval" placeholder="0.01" step="0.01" min="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="sellAmount">매도 수량</label>
+                        <input type="number" id="sellAmount" placeholder="0.1" step="0.1" min="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="sellPrice">매도 가격</label>
+                        <input type="number" id="sellPrice" placeholder="100.0" step="0.01" min="0.01">
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="startWorker()">시작</button>
+                    <button class="btn btn-danger" onclick="stopWorker()">정지</button>
+                </div>
+            </div>
+
+            <!-- 로그 섹션 -->
+            <div class="log-section">
+                <h2>로그</h2>
+                <div class="log-container" id="logContainer">
+                    <div class="log-entry">
+                        <span class="log-timestamp">[시스템]</span>
+                        <span class="log-level-info">애플리케이션이 시작되었습니다.</span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 로그인 페이지 -->
-        <div id="login-page" class="page">
-            <div class="container">
-                <div class="login-card">
-                    <h2>로그인</h2>
-                    <form id="loginForm" onsubmit="handleLogin(event)">
-                        <div class="form-group">
-                            <label for="loginUserID">사용자 ID</label>
-                            <input type="text" id="loginUserID" name="userID" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="loginPassword">비밀번호</label>
-                            <input type="password" id="loginPassword" name="password" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary">로그인</button>
-                    </form>
-                    <p class="form-footer">
-                        계정이 없으신가요? <a href="#" onclick="showPage('register')">회원가입</a>
-                    </p>
-                </div>
+        <!-- 상태 바 -->
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span class="status-text" id="statusText">중지됨</span>
             </div>
-        </div>
-
-        <!-- 회원가입 페이지 -->
-        <div id="register-page" class="page">
-            <div class="container">
-                <div class="register-card">
-                    <h2>회원가입</h2>
-                    <form id="registerForm" onsubmit="handleRegister(event)">
-                        <div class="form-group">
-                            <label for="registerUserID">사용자 ID</label>
-                            <input type="text" id="registerUserID" name="userID" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="registerPassword">비밀번호</label>
-                            <input type="password" id="registerPassword" name="password" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="confirmPassword">비밀번호 확인</label>
-                            <input type="password" id="confirmPassword" name="confirmPassword" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary">회원가입</button>
-                    </form>
-                    <p class="form-footer">
-                        이미 계정이 있으신가요? <a href="#" onclick="showPage('login')">로그인</a>
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <!-- 대시보드 페이지 -->
-        <div id="dashboard-page" class="page">
-            <div class="dashboard-layout">
-                <!-- 사이드바 -->
-                <div class="sidebar">
-                    <div class="sidebar-header">
-                        <h2>BitBit</h2>
-                        <p>암호화폐 거래 관리</p>
-                    </div>
-                    <nav class="sidebar-nav">
-                        <ul>
-                            <li class="active"><a href="#" onclick="showDashboardTab('platforms')">거래소 Key 관리</a></li>
-                            <li><a href="#" onclick="showDashboardTab('trading')">예약 매도 관리</a></li>
-                            <li><a href="#" onclick="showDashboardTab('file-management')">파일 관리</a></li>
-                            <li><a href="#" onclick="showDashboardTab('log-viewer-grid')">로그 뷰어</a></li>
-                            <li><a href="#" onclick="showDashboardTab('system-log')">시스템 로그</a></li>
-                        </ul>
-                    </nav>
-                    <div class="sidebar-footer">
-                        <button onclick="logout()" class="btn btn-secondary">로그아웃</button>
-                    </div>
-                </div>
-
-                <!-- 메인 콘텐츠 -->
-                <div class="main-content">
-                    <!-- 헤더 -->
-                    <header class="dashboard-header">
-                        <div class="header-left">
-                            <h1 id="dashboard-title">거래소 Key 관리</h1>
-                        </div>
-                        <div class="header-right">
-                            <div class="user-info">
-                                <span id="current-user">사용자</span>
-                                <div class="user-avatar">👤</div>
-                            </div>
-                        </div>
-                    </header>
-
-                    <!-- 대시보드 콘텐츠 -->
-                    <div class="dashboard-content">
-                        <!-- 거래소 Key 관리 탭 -->
-                        <div id="platforms-tab" class="dashboard-tab active">
-                            <div class="content-card">
-                                <div class="card-header">
-                                    <h3>거래소 Key 관리</h3>
-                                    <div style="display: flex; gap: 10px;">
-                                        <button class="btn btn-primary" onclick="showAddPlatformModal()">
-                                            <span class="btn-icon">+</span>
-                                            추가
-                                        </button>
-                                    </div>
-                                </div>
-                                <div id="platforms-content">
-                                    <p>플랫폼 정보를 불러오는 중...</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 예약 매도 관리 탭 -->
-                        <div id="trading-tab" class="dashboard-tab">
-                            <div class="content-card">
-                                <div class="card-header">
-                                    <h3>예약 매도 관리</h3>
-                                    <button class="btn btn-primary" onclick="addSellOrder(event); return false;">
-                                        <span class="btn-icon">+</span>
-                                        예약 매도 추가
-                                    </button>
-                                </div>
-                                <div id="trading-content">
-                                    <div class="sell-order-list" id="sell-order-list-container">
-                                        <!-- 동적으로 예약 매도 목록이 생성됩니다 -->
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 파일 관리 탭 -->
-                        <div id="file-management-tab" class="dashboard-tab">
-                            <div class="content-card">
-                                <div class="card-header">
-                                    <h3>파일 관리</h3>
-                                    <div class="file-management-actions">
-                                        <button class="btn btn-secondary" onclick="formatJSON()">
-                                            <span class="btn-icon">📝</span>
-                                            포맷 정리
-                                        </button>
-                                        <button class="btn btn-primary" onclick="saveFileData()">
-                                            <span class="btn-icon">💾</span>
-                                            저장
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="file-management-content">
-                                    <div class="json-editor-container">
-                                        <textarea id="json-editor" placeholder="JSON 데이터를 여기에 입력하세요..."></textarea>
-                                    </div>
-                                    <div class="json-status">
-                                        <span id="json-status-text">JSON 형식이 올바릅니다</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-
-
-                        <!-- 설정 탭 -->
-                        <div id="settings-tab" class="dashboard-tab">
-                            <div class="content-card">
-                                <h3>설정</h3>
-                                <div id="settings-content">
-                                    <p>설정을 불러오는 중...</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 시스템 로그 탭 -->
-                        <div id="system-log-tab" class="dashboard-tab">
-                            <div class="content-card">
-                                <div class="card-header">
-                                    <h3>시스템 로그</h3>
-                                    <div style="display: flex; gap: 10px;">
-                                        <button class="btn btn-secondary" onclick="clearSystemLog()">
-                                            로그 지우기
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="card-body">
-                                    <div id="system-log-container" style="width: 100%; height: calc(100vh - 200px); font-family: monospace; font-size: 12px; background: #1e1e1e; color: #ffffff; border: 1px solid #333; padding: 15px; overflow-y: auto;"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 로그 뷰어 (그리드 레이아웃) -->
-                        <div id="log-viewer-grid-tab" class="dashboard-tab">
-                            <div class="content-card">
-                                <div class="card-header">
-                                    <h3>로그 뷰어</h3>
-                                    <div style="display: flex; gap: 10px;">
-                                        <button class="btn btn-secondary" onclick="clearAllGridLogs()">
-                                            모든 로그 지우기
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="card-body">
-                                    <div class="log-grid" id="log-grid-container">
-                                        <!-- 동적으로 로그 패널이 생성됩니다 -->
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        
-                    </div>
-                </div>
-            </div>
+            <div class="version-info" id="versionInfo">버전: 1.0.0</div>
         </div>
     </div>
 
-    <!-- 플랫폼 추가/수정 모달 -->
-    <div id="platform-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modal-title">플랫폼 추가</h3>
-                <button class="modal-close" onclick="closePlatformModal()">&times;</button>
-            </div>
-            <form id="platform-form" onsubmit="handlePlatformSubmit(event)">
-                <div class="form-group">
-                    <label for="platformSelect">거래소</label>
-                    <select id="platformSelect" name="platformName" required>
-                        <option value="">거래소를 선택하세요</option>
-                        <option value="upbit">Upbit</option>
-                        <option value="bithumb">Bithumb</option>
-                        <option value="coinone">Coinone</option>
-                        <option value="korbit">Korbit</option>
-                        <option value="binance">Binance</option>
-                        <option value="bybit">Bybit</option>
-                        <option value="bitget">Bitget</option>
-                        <option value="huobi">Huobi</option>
-                        <option value="mexc">Mexc</option>
-                        <option value="kucoin">KuCoin</option>
-                        <option value="coinbase">Coinbase</option>
-                        <option value="okx">OKX</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="platformName">별칭</label>
-                    <input type="text" id="platformName" name="name" placeholder="예: 테스트용, 메인계정" required>
-                </div>
-                <div class="form-group">
-                    <label for="accessKey">Access Key</label>
-                    <input type="text" id="accessKey" name="accessKey" placeholder="Access Key를 입력하세요" required>
-                </div>
-                <div class="form-group">
-                    <label for="secretKey">Secret Key</label>
-                    <input type="password" id="secretKey" name="secretKey" placeholder="Secret Key를 입력하세요" required>
-                </div>
-                <div class="form-group">
-                    <label for="passwordPhrase">Password Phrase</label>
-                    <input type="password" id="passwordPhrase" name="passwordPhrase" placeholder="Password Phrase를 입력하세요 (선택사항)">
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closePlatformModal()">취소</button>
-                    <button type="submit" class="btn btn-primary" id="platform-submit-btn">추가</button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <script>
+        // 전역 변수
+        let isRunning = false;
+        let logUpdateInterval;
 
-    <!-- 예약 매도 추가 모달 -->
-    <div id="sell-order-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="sell-order-modal-title">예약 매도 추가</h3>
-                <button class="modal-close" onclick="closeSellOrderModal()">&times;</button>
-            </div>
-            <form id="sell-order-form" onsubmit="handleSellOrderSubmit(event)">
-                <div class="form-group">
-                    <label for="platformKey">사용할 API Key</label>
-                    <select name="platformKey" id="platformKey-select" required>
-                        <option value="">API Key를 선택하세요</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="orderName">매도 주문 별칭</label>
-                    <input type="text" name="orderName" placeholder="매도 주문 별칭을 입력하세요" required>
-                </div>
-                <div class="form-group">
-                    <label for="symbol">심볼</label>
-                    <input type="text" name="symbol" placeholder="예: BTC/KRW, ETH/USDT" pattern="^[A-Za-z0-9]+\/(KRW|USDT|BTC)$" title="형식: BASE/QUOTE, QUOTE는 KRW|USDT|BTC만 허용" required>
-                </div>
-                <div class="form-group">
-                    <label for="price">목표가</label>
-                    <input type="number" name="price" step="any" placeholder="목표가를 입력하세요" required>
-                </div>
-                <div class="form-group">
-                    <label for="quantity">수량</label>
-                    <input type="number" name="quantity" step="any" placeholder="수량을 입력하세요" required>
-                </div>
-                <div class="form-group">
-                    <label for="term">주기 (초)</label>
-                    <input type="number" name="term" step="any" placeholder="주기를 초 단위로 입력하세요" required>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeSellOrderModal()">취소</button>
-                    <button type="submit" class="btn btn-primary" id="sell-order-submit-btn">추가</button>
-                </div>
-            </form>
-        </div>
-    </div>
+        // 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            loadWorkerConfig();
+            startLogUpdates();
+            checkVersion();
+        });
 
-    <!-- 로그 모달 -->
-    <div id="log-modal" class="modal">
-        <div class="modal-content log-modal-content">
-            <div class="modal-header">
-                <h3 id="log-modal-title">예약 매도 로그</h3>
-                <button class="modal-close" onclick="closeLogModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="log-content" class="log-display">
-                    <!-- 로그 내용이 여기에 표시됩니다 -->
-                </div>
-            </div>
-        </div>
-    </div>
+        // 워커 시작
+        async function startWorker() {
+            const config = getConfigFromForm();
+            if (!validateConfig(config)) {
+                return;
+            }
 
-    <script type="module" src="./src/main.ts"></script>
+            try {
+                const result = await window.go.main.App.SetWorkerConfig(
+                    config.exchange,
+                    config.accessKey,
+                    config.secretKey,
+                    config.passwordPhrase,
+                    config.requestInterval,
+                    config.symbol,
+                    config.sellAmount,
+                    config.sellPrice
+                );
+
+                if (result.success) {
+                    const startResult = await window.go.main.App.StartWorker();
+                    if (startResult.success) {
+                        isRunning = true;
+                        updateStatus();
+                        addLog('success', '워커가 시작되었습니다.');
+                    } else {
+                        addLog('error', startResult.message);
+                    }
+                } else {
+                    addLog('error', result.message);
+                }
+            } catch (error) {
+                addLog('error', '워커 시작 실패: ' + error.message);
+            }
+        }
+
+        // 워커 중지
+        async function stopWorker() {
+            try {
+                const result = await window.go.main.App.StopWorker();
+                if (result.success) {
+                    isRunning = false;
+                    updateStatus();
+                    addLog('info', '워커가 중지되었습니다.');
+                } else {
+                    addLog('error', result.message);
+                }
+            } catch (error) {
+                addLog('error', '워커 중지 실패: ' + error.message);
+            }
+        }
+
+        // 설정 폼에서 값 가져오기
+        function getConfigFromForm() {
+            return {
+                exchange: document.getElementById('exchange').value,
+                accessKey: document.getElementById('accessKey').value,
+                secretKey: document.getElementById('secretKey').value,
+                passwordPhrase: document.getElementById('passwordPhrase').value,
+                requestInterval: document.getElementById('requestInterval').value,
+                symbol: document.getElementById('symbol').value,
+                sellAmount: document.getElementById('sellAmount').value,
+                sellPrice: document.getElementById('sellPrice').value
+            };
+        }
+
+        // 설정 검증
+        function validateConfig(config) {
+            if (!config.exchange) {
+                addLog('error', '거래소를 선택해주세요.');
+                return false;
+            }
+            if (!config.accessKey || !config.secretKey) {
+                addLog('error', 'Access Key와 Secret Key를 입력해주세요.');
+                return false;
+            }
+            if (!config.requestInterval || parseFloat(config.requestInterval) <= 0) {
+                addLog('error', '요청 간격을 올바르게 입력해주세요.');
+                return false;
+            }
+            if (!config.symbol) {
+                addLog('error', '심볼을 입력해주세요.');
+                return false;
+            }
+            if (!config.sellAmount || parseFloat(config.sellAmount) <= 0) {
+                addLog('error', '매도 수량을 올바르게 입력해주세요.');
+                return false;
+            }
+            if (!config.sellPrice || parseFloat(config.sellPrice) <= 0) {
+                addLog('error', '매도 가격을 올바르게 입력해주세요.');
+                return false;
+            }
+            return true;
+        }
+
+        // 설정 로드
+        async function loadWorkerConfig() {
+            try {
+                const result = await window.go.main.App.GetWorkerConfig();
+                if (result.success && result.config) {
+                    const config = result.config;
+                    document.getElementById('exchange').value = config.exchange || '';
+                    document.getElementById('accessKey').value = config.accessKey || '';
+                    document.getElementById('secretKey').value = config.secretKey || '';
+                    document.getElementById('requestInterval').value = config.requestInterval || '';
+                    document.getElementById('symbol').value = config.symbol || '';
+                }
+            } catch (error) {
+                addLog('error', '설정 로드 실패: ' + error.message);
+            }
+        }
+
+        // 상태 업데이트
+        function updateStatus() {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            if (isRunning) {
+                statusDot.classList.add('running');
+                statusText.textContent = '실행 중';
+            } else {
+                statusDot.classList.remove('running');
+                statusText.textContent = '중지됨';
+            }
+        }
+
+        // 로그 추가
+        function addLog(level, message) {
+            const logContainer = document.getElementById('logContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `
+                <span class="log-timestamp">[${timestamp}]</span>
+                <span class="log-level-${level}">[${level.toUpperCase()}]</span>
+                <span class="log-message">${message}</span>
+            `;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // 로그 업데이트 시작
+        function startLogUpdates() {
+            logUpdateInterval = setInterval(async () => {
+                try {
+                    const result = await window.go.main.App.GetLogs(50);
+                    if (result.success && result.logs) {
+                        updateLogDisplay(result.logs);
+                    }
+                } catch (error) {
+                    console.error('로그 업데이트 실패:', error);
+                }
+            }, 1000); // 1초마다 업데이트
+        }
+
+        // 로그 표시 업데이트
+        function updateLogDisplay(logs) {
+            const logContainer = document.getElementById('logContainer');
+            
+            // 기존 로그와 비교하여 새로운 로그만 추가
+            const existingLogs = logContainer.children.length;
+            if (logs.length > existingLogs) {
+                for (let i = existingLogs; i < logs.length; i++) {
+                    const log = logs[i];
+                    const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                    
+                    const logEntry = document.createElement('div');
+                    logEntry.className = 'log-entry';
+                    logEntry.innerHTML = `
+                        <span class="log-timestamp">[${timestamp}]</span>
+                        <span class="log-level-${log.level}">[${log.level.toUpperCase()}]</span>
+                        <span class="log-message">${log.message}</span>
+                    `;
+                    
+                    logContainer.appendChild(logEntry);
+                }
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+        // 버전 체크
+        async function checkVersion() {
+            try {
+                const result = await window.go.main.App.CheckVersion();
+                if (result.success) {
+                    document.getElementById('versionInfo').textContent = 
+                        `버전: ${result.currentVersion}`;
+                }
+            } catch (error) {
+                console.error('버전 체크 실패:', error);
+            }
+        }
+    </script>
 </body>
 </html>

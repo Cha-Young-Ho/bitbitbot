@@ -1,76 +1,76 @@
 package platform
 
 import (
-	"bitbit-app/local_file"
+	"context"
 	"fmt"
 	"strings"
 )
 
-// WorkerFactory 워커를 생성하는 팩토리
-type WorkerFactory struct {
-	manager *WorkerManager
+// WorkerFactory 워커 팩토리
+type WorkerFactory struct{}
+
+// NewWorkerFactory 새로운 워커 팩토리 생성
+func NewWorkerFactory() *WorkerFactory {
+	return &WorkerFactory{}
 }
 
-// NewWorkerFactory 새로운 워커 팩토리를 생성합니다
-func NewWorkerFactory(manager *WorkerManager) *WorkerFactory {
-	return &WorkerFactory{
-		manager: manager,
-	}
-}
+// CreateWorker 거래소별 워커 생성
+func (wf *WorkerFactory) CreateWorker(config *WorkerConfig, storage *MemoryStorage) (WorkerInterface, error) {
+	// 거래소 이름을 소문자로 변환
+	exchange := strings.ToLower(config.Exchange)
+	fmt.Printf("WorkerFactory: 거래소 '%s' -> '%s'로 변환하여 워커 생성 시작\n", config.Exchange, exchange)
 
-// CreateWorker 플랫폼에 따라 적절한 워커를 생성합니다
-func (wf *WorkerFactory) CreateWorker(order local_file.SellOrder, accessKey, secretKey, passwordPhrase string) (Worker, error) {
-	platform := strings.ToLower(order.Platform)
-
-	switch platform {
-	case "upbit":
-		return NewUpbitWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
-	case "bithumb":
-		return NewBithumbWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+	switch exchange {
 	case "binance":
-		return NewBinanceWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
-	case "bybit":
-		return NewBybitWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		fmt.Println("WorkerFactory: 바이낸스 워커 생성")
+		return NewBinanceWorker(config, storage), nil
 	case "bitget":
-		return NewBitgetWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
-	case "huobi":
-		return NewHuobiWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
-	case "mexc":
-		return NewMexcWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		fmt.Println("WorkerFactory: 비트겟 워커 생성")
+		return NewBitgetWorker(config, storage), nil
+	case "bybit":
+		fmt.Println("WorkerFactory: 바이비트 워커 생성")
+		return NewBybitWorker(config, storage), nil
 	case "kucoin":
-		return NewKucoinWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
-	case "gate":
-		return NewGateWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		fmt.Println("WorkerFactory: 쿠코인 워커 생성")
+		return NewKuCoinWorker(config, storage), nil
+	case "upbit":
+		fmt.Println("WorkerFactory: 업비트 워커 생성")
+		return NewUpbitWorker(config, storage), nil
+	case "bithumb":
+		fmt.Println("WorkerFactory: 빗썸 워커 생성")
+		return NewBithumbWorker(config, storage), nil
 	case "coinbase":
-		return NewCoinbaseWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		fmt.Println("WorkerFactory: 코인베이스 워커 생성")
+		return NewCoinbaseWorker(config, storage), nil
+	case "huobi":
+		fmt.Println("WorkerFactory: 후오비 워커 생성")
+		return NewHuobiWorker(config, storage), nil
+	case "mexc":
+		fmt.Println("WorkerFactory: MEXC 워커 생성")
+		return NewMexcWorker(config, storage), nil
 	case "coinone":
-		return NewCoinoneWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		fmt.Println("WorkerFactory: 코인원 워커 생성")
+		return NewCoinoneWorker(config, storage), nil
 	case "korbit":
-		return NewKorbitWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		fmt.Println("WorkerFactory: 코빗 워커 생성")
+		return NewKorbitWorker(config, storage), nil
+	case "gate":
+		fmt.Println("WorkerFactory: Gate.io 워커 생성")
+		return NewGateWorker(config, storage), nil
 	case "okx":
-		return NewOKXWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		fmt.Println("WorkerFactory: OKX 워커 생성")
+		return NewOKXWorker(config, storage), nil
 	default:
-		// 아직 구현되지 않은 플랫폼은 기본 워커로 대체
-		fmt.Printf("지원되지 않는 플랫폼: %s, 기본 워커로 대체\n", platform)
-		return NewBaseWorker(order, wf.manager, accessKey, secretKey, passwordPhrase), nil
+		// 기존 Worker 사용 (다른 거래소들은 기존 로직 사용)
+		fmt.Printf("WorkerFactory: 기본 워커 생성 (거래소: %s)\n", config.Exchange)
+		return NewWorker(config, storage), nil
 	}
 }
 
-// GetSupportedPlatforms 지원되는 플랫폼 목록을 반환합니다
-func (wf *WorkerFactory) GetSupportedPlatforms() []string {
-	return []string{
-		"Upbit",
-		"Bithumb",
-		"Binance",
-		"Bybit",
-		"Bitget",
-		"Huobi",
-		"Mexc",
-		"Kucoin",
-		"Gate",
-		"Coinbase",
-		"Coinone",
-		"Korbit",
-		"OKX",
-	}
+// WorkerInterface 워커 인터페이스
+type WorkerInterface interface {
+	Start(ctx context.Context)
+	Stop()
+	IsRunning() bool
+	GetPlatformName() string
 }

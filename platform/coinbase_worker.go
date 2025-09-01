@@ -1,161 +1,161 @@
 package platform
 
 import (
-	"bitbit-app/local_file"
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
-
-	ccxt "github.com/ccxt/ccxt/go/v4"
 )
 
-// CoinbaseWorker Coinbase 플랫폼용 워커
+// CoinbaseWorker 코인베이스 거래소 워커
 type CoinbaseWorker struct {
-	*BaseWorker
+	config    *WorkerConfig
+	storage   *MemoryStorage
+	running   bool
+	stopCh    chan struct{}
 	accessKey string
 	secretKey string
-	exchange  ccxt.IExchange
+	url       string
 }
 
-// NewCoinbaseWorker 새로운 Coinbase 워커를 생성합니다
-func NewCoinbaseWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *CoinbaseWorker {
-	// CCXT 거래소 인스턴스 생성
-	exchangeConfig := map[string]interface{}{
-		"apiKey":          accessKey,
-		"secret":          secretKey,
-		"timeout":         30000, // 30초
-		"sandbox":         false, // 실제 거래
-		"enableRateLimit": true,
-	}
-
-	// Password Phrase가 있으면 추가
-	if passwordPhrase != "" {
-		exchangeConfig["password"] = passwordPhrase
-	}
-
-	exchange := ccxt.CreateExchange("coinbase", exchangeConfig)
-
-	// BaseWorker 생성
-	baseWorker := NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase)
-
+// NewCoinbaseWorker 새로운 코인베이스 워커를 생성합니다
+func NewCoinbaseWorker(config *WorkerConfig, storage *MemoryStorage) *CoinbaseWorker {
 	return &CoinbaseWorker{
-		BaseWorker: baseWorker,
-		accessKey:  accessKey,
-		secretKey:  secretKey,
-		exchange:   exchange,
+		config:    config,
+		storage:   storage,
+		running:   false,
+		stopCh:    make(chan struct{}),
+		accessKey: config.AccessKey,
+		secretKey: config.SecretKey,
+		url:       "https://api.exchange.coinbase.com/orders",
 	}
 }
 
 // Start 워커를 시작합니다
-func (cw *CoinbaseWorker) Start(ctx context.Context) error {
-	cw.mu.Lock()
-	defer cw.mu.Unlock()
+func (cbw *CoinbaseWorker) Start(ctx context.Context) {
+	cbw.running = true
+	cbw.storage.AddLog("info", "코인베이스 워커가 시작되었습니다.", cbw.config.Exchange, cbw.config.Symbol)
 
-	if cw.isRunning {
-		return fmt.Errorf("워커가 이미 실행 중입니다: %s", cw.order.Name)
+	// 티커 생성 (밀리초 단위로 변환)
+	intervalMs := int64(cbw.config.RequestInterval * 1000)
+	interval := time.Duration(intervalMs) * time.Millisecond
+	if interval < time.Millisecond {
+		interval = time.Millisecond // 최소 1ms
 	}
 
-	cw.ctx, cw.cancel = context.WithCancel(ctx)
-	cw.isRunning = true
-	cw.status.IsRunning = true
-
-	// 워커 고루틴 시작 (Coinbase 자체 run 사용)
-	go cw.run()
-	return nil
-}
-
-// run 워커의 메인 루프 (Coinbase 전용)
-func (cw *CoinbaseWorker) run() {
-	ticker := time.NewTicker(time.Duration(cw.order.Term) * time.Second)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-
-	// 시작 로그 제거
-	// Coinbase 워커 시작 로그 제거
 
 	for {
 		select {
-		case <-cw.ctx.Done():
-			cw.sendLog("Coinbase 워커가 중지되었습니다", "info")
-			// Coinbase 워커 중지 로그 제거
+		case <-ctx.Done():
+			cbw.running = false
+			cbw.storage.AddLog("info", "코인베이스 워커가 중지되었습니다.", cbw.config.Exchange, cbw.config.Symbol)
+			return
+		case <-cbw.stopCh:
+			cbw.running = false
+			cbw.storage.AddLog("info", "코인베이스 워커가 중지되었습니다.", cbw.config.Exchange, cbw.config.Symbol)
 			return
 		case <-ticker.C:
-			cw.executeSellOrder()
+			cbw.executeSellOrder()
 		}
 	}
 }
 
-// executeSellOrder 지정가 매도 주문을 실행합니다
-func (cw *CoinbaseWorker) executeSellOrder() {
-	// BaseWorker의 상태 업데이트
-	cw.mu.Lock()
-	cw.status.LastCheck = time.Now()
-	cw.status.CheckCount++
-	cw.mu.Unlock()
+// Stop 워커를 중지합니다
+func (cbw *CoinbaseWorker) Stop() {
+	if cbw.running {
+		close(cbw.stopCh)
+		cbw.running = false
+	}
+}
 
-	// 거래소가 nil인 경우 에러 처리
-	if cw.exchange == nil {
-		cw.mu.Lock()
-		cw.status.ErrorCount++
-		cw.status.LastError = "거래소가 초기화되지 않았습니다"
-		cw.mu.Unlock()
+// IsRunning 워커 실행 상태 확인
+func (cbw *CoinbaseWorker) IsRunning() bool {
+	return cbw.running
+}
 
-		cw.sendLog("거래소가 초기화되지 않았습니다", "error")
-		return
+// executeSellOrder 코인베이스에서 매도 주문 실행
+func (cbw *CoinbaseWorker) executeSellOrder() {
+	timestamp := time.Now().Unix()
+
+	requestBody := map[string]interface{}{
+		"product_id":    strings.ReplaceAll(cbw.config.Symbol, "/", "-"),
+		"side":          "sell",
+		"type":          "limit",
+		"size":          fmt.Sprintf("%.8f", cbw.config.SellAmount),
+		"price":         fmt.Sprintf("%.8f", cbw.config.SellPrice),
+		"time_in_force": "GTC",
 	}
 
-	// Coinbase 심볼 형식으로 변환 (예: BTC/USDT -> BTC/USDT)
-	coinbaseSymbol := cw.convertToCoinbaseSymbol(cw.order.Symbol)
-
-	// 디버깅을 위한 로그 추가
-	cw.sendLog(fmt.Sprintf("주문 시도 - 심볼: %s, 수량: %.8f, 가격: %.2f",
-		coinbaseSymbol, cw.order.Quantity, cw.order.Price), "info")
-
-	// CCXT를 사용한 지정가 매도 주문
-	orderID, err := cw.exchange.CreateLimitSellOrder(
-		coinbaseSymbol,    // 심볼 (예: BTC/USDT)
-		cw.order.Quantity, // 수량
-		cw.order.Price,    // 가격
-	)
-
+	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		cw.mu.Lock()
-		cw.status.ErrorCount++
-		cw.status.LastError = err.Error()
-		cw.mu.Unlock()
-
-		cw.sendLog(fmt.Sprintf("매도 주문 실패: %v", err), "error")
-		cw.manager.SendSystemLog("CoinbaseWorker", "executeSellOrder",
-			fmt.Sprintf("매도 주문 실패: %v", err), "error", "", cw.order.Name, err.Error())
+		cbw.storage.AddLog("error", fmt.Sprintf("JSON 변환 실패: %v", err), cbw.config.Exchange, cbw.config.Symbol)
 		return
 	}
 
-	// 성공 로그
-	cw.sendLog(fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		cw.order.Price, cw.order.Quantity, orderID), "success", cw.order.Price, cw.order.Quantity)
+	// 서명 생성
+	signature := cbw.createCoinbaseSignature(string(jsonBody), timestamp)
+
+	req, err := http.NewRequest("POST", cbw.url, bytes.NewReader(jsonBody))
+	if err != nil {
+		cbw.storage.AddLog("error", fmt.Sprintf("HTTP 요청 생성 실패: %v", err), cbw.config.Exchange, cbw.config.Symbol)
+		return
+	}
+
+	req.Header.Set("CB-ACCESS-KEY", cbw.accessKey)
+	req.Header.Set("CB-ACCESS-SIGN", signature)
+	req.Header.Set("CB-ACCESS-TIMESTAMP", strconv.FormatInt(timestamp, 10))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		cbw.storage.AddLog("error", fmt.Sprintf("HTTP 요청 실패: %v", err), cbw.config.Exchange, cbw.config.Symbol)
+		return
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		cbw.storage.AddLog("error", fmt.Sprintf("응답 파싱 실패: %v", err), cbw.config.Exchange, cbw.config.Symbol)
+		return
+	}
+
+	if resp.StatusCode == 200 {
+		orderID, ok := result["id"].(string)
+		if ok && orderID != "" {
+			cbw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.8f",
+				orderID, cbw.config.SellPrice, cbw.config.SellAmount), cbw.config.Exchange, cbw.config.Symbol)
+		} else {
+			cbw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
+				cbw.config.SellPrice, cbw.config.SellAmount), cbw.config.Exchange, cbw.config.Symbol)
+		}
+	} else {
+		errorMsg := "알 수 없는 오류"
+		if result["message"] != nil {
+			errorMsg = fmt.Sprintf("%v", result["message"])
+		}
+		cbw.storage.AddLog("error", fmt.Sprintf("코인베이스 API 오류: %s", errorMsg), cbw.config.Exchange, cbw.config.Symbol)
+	}
+}
+
+// createCoinbaseSignature 코인베이스 HMAC-SHA256 서명 생성
+func (cbw *CoinbaseWorker) createCoinbaseSignature(body string, timestamp int64) string {
+	message := strconv.FormatInt(timestamp, 10) + "POST" + "/orders" + body
+	h := hmac.New(sha256.New, []byte(cbw.secretKey))
+	h.Write([]byte(message))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
-func (cw *CoinbaseWorker) GetPlatformName() string {
+func (cbw *CoinbaseWorker) GetPlatformName() string {
 	return "Coinbase"
-}
-
-// convertToCoinbaseSymbol Coinbase 심볼 형식으로 변환합니다
-func (cw *CoinbaseWorker) convertToCoinbaseSymbol(symbol string) string {
-	// Coinbase는 CCXT 표준 형식 사용 (예: BTC/USDT)
-	parts := strings.Split(symbol, "/")
-	if len(parts) != 2 {
-		cw.sendLog(fmt.Sprintf("잘못된 심볼 형식: %s (올바른 형식: BTC/USDT)", symbol), "warning")
-		return symbol
-	}
-
-	base := strings.TrimSpace(strings.ToUpper(parts[0]))  // BTC
-	quote := strings.TrimSpace(strings.ToUpper(parts[1])) // USDT
-
-	// Coinbase 마켓 형식으로 변환
-	coinbaseSymbol := base + "/" + quote // "BTC/USDT"
-
-	cw.sendLog(fmt.Sprintf("심볼 변환: %s -> %s", symbol, coinbaseSymbol), "info")
-
-	return coinbaseSymbol
 }

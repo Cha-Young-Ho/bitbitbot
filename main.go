@@ -12,29 +12,24 @@ import (
 var assets embed.FS
 
 func main() {
-	// 설정 초기화만 수행 (실제 검증은 프론트엔드에서 처리)
-	if err := initConfigSettings(); err != nil {
-		log.Printf("설정 초기화 실패: %v", err)
-		return
-	}
-
 	// Create an instance of the app structure
 	app := NewApp()
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:            "bitbit",
+		Title:            "BitBit - 워커 관리",
 		Width:            1024,
 		Height:           768,
 		Assets:           assets,
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
+		OnStartup:        app.OnStartup,
+		OnShutdown:       app.OnShutdown,
 		Bind: []interface{}{
 			app,
 		},
 	})
 
 	if err != nil {
-		println("Error:", err.Error())
+		log.Printf("Error: %v", err)
 	}
 }

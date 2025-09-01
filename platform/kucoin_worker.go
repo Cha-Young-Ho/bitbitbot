@@ -1,147 +1,162 @@
 package platform
 
 import (
-	"bitbit-app/local_file"
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
-
-	ccxt "github.com/ccxt/ccxt/go/v4"
 )
 
-// KucoinWorker Kucoin 플랫폼용 워커
-type KucoinWorker struct {
-	*BaseWorker
+// KuCoinWorker 쿠코인 거래소 워커
+type KuCoinWorker struct {
+	config    *WorkerConfig
+	storage   *MemoryStorage
+	running   bool
+	stopCh    chan struct{}
 	accessKey string
 	secretKey string
-	exchange  ccxt.IExchange
+	url       string
 }
 
-// NewKucoinWorker 새로운 Kucoin 워커를 생성합니다
-func NewKucoinWorker(order local_file.SellOrder, manager *WorkerManager, accessKey, secretKey, passwordPhrase string) *KucoinWorker {
-	// CCXT 거래소 인스턴스 생성
-	exchangeConfig := map[string]interface{}{
-		"apiKey":          accessKey,
-		"secret":          secretKey,
-		"timeout":         30000, // 30초
-		"sandbox":         false, // 실제 거래
-		"enableRateLimit": true,
-	}
-
-	// Password Phrase가 있으면 추가
-	if passwordPhrase != "" {
-		exchangeConfig["password"] = passwordPhrase
-	}
-
-	exchange := ccxt.CreateExchange("kucoin", exchangeConfig)
-
-	// BaseWorker 생성
-	baseWorker := NewBaseWorker(order, manager, accessKey, secretKey, passwordPhrase)
-
-	return &KucoinWorker{
-		BaseWorker: baseWorker,
-		accessKey:  accessKey,
-		secretKey:  secretKey,
-		exchange:   exchange,
+// NewKuCoinWorker 새로운 쿠코인 워커를 생성합니다
+func NewKuCoinWorker(config *WorkerConfig, storage *MemoryStorage) *KuCoinWorker {
+	return &KuCoinWorker{
+		config:    config,
+		storage:   storage,
+		running:   false,
+		stopCh:    make(chan struct{}),
+		accessKey: config.AccessKey,
+		secretKey: config.SecretKey,
+		url:       "https://api.kucoin.com/api/v1/orders",
 	}
 }
 
 // Start 워커를 시작합니다
-func (kw *KucoinWorker) Start(ctx context.Context) error {
-	kw.mu.Lock()
-	defer kw.mu.Unlock()
+func (kcw *KuCoinWorker) Start(ctx context.Context) {
+	kcw.running = true
+	kcw.storage.AddLog("info", "쿠코인 워커가 시작되었습니다.", kcw.config.Exchange, kcw.config.Symbol)
 
-	if kw.isRunning {
-		return fmt.Errorf("워커가 이미 실행 중입니다: %s", kw.order.Name)
+	// 티커 생성 (밀리초 단위로 변환)
+	intervalMs := int64(kcw.config.RequestInterval * 1000)
+	interval := time.Duration(intervalMs) * time.Millisecond
+	if interval < time.Millisecond {
+		interval = time.Millisecond // 최소 1ms
 	}
 
-	kw.ctx, kw.cancel = context.WithCancel(ctx)
-	kw.isRunning = true
-	kw.status.IsRunning = true
-
-	// 워커 고루틴 시작
-	go kw.run()
-	return nil
-}
-
-// run 워커의 메인 루프
-func (kw *KucoinWorker) run() {
-	// Term(초)이 소수일 수 있으므로 밀리초로 변환하여 절삭 방지, 최소 1ms 보장
-	intervalMs := int64(kw.order.Term * 1000)
-	if intervalMs < 1 {
-		intervalMs = 1
-	}
-	ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-kw.ctx.Done():
-			kw.sendLog("Kucoin 워커가 중지되었습니다", "info")
+		case <-ctx.Done():
+			kcw.running = false
+			kcw.storage.AddLog("info", "쿠코인 워커가 중지되었습니다.", kcw.config.Exchange, kcw.config.Symbol)
+			return
+		case <-kcw.stopCh:
+			kcw.running = false
+			kcw.storage.AddLog("info", "쿠코인 워커가 중지되었습니다.", kcw.config.Exchange, kcw.config.Symbol)
 			return
 		case <-ticker.C:
-			// 매 tick마다 반드시 실행: 비동기 고루틴으로 처리 (이전 요청 진행 중이어도 새 요청 즉시 시작)
-			go kw.executeSellOrder(kw.order.Price)
+			kcw.executeSellOrder()
 		}
 	}
 }
 
-// executeSellOrder Kucoin에서 매도 주문을 실행합니다
-func (kw *KucoinWorker) executeSellOrder(price float64) {
-	// Kucoin 지정가 매도 주문 실행
-	kw.sendLog(fmt.Sprintf("Kucoin 매도 주문 실행 (가격: %.2f, 수량: %.8f)", price, kw.order.Quantity), "order", price, kw.order.Quantity)
+// Stop 워커를 중지합니다
+func (kcw *KuCoinWorker) Stop() {
+	if kcw.running {
+		close(kcw.stopCh)
+		kcw.running = false
+	}
+}
 
-	// 거래소가 nil인 경우 에러 처리
-	if kw.exchange == nil {
-		kw.manager.SendSystemLog("KucoinWorker", "executeSellOrder", "거래소가 초기화되지 않았습니다", "error", "", kw.order.Name, "")
-		kw.sendLog("거래소가 초기화되지 않았습니다", "error", price, kw.order.Quantity)
-		return
+// IsRunning 워커 실행 상태 확인
+func (kcw *KuCoinWorker) IsRunning() bool {
+	return kcw.running
+}
+
+// executeSellOrder 쿠코인에서 매도 주문 실행
+func (kcw *KuCoinWorker) executeSellOrder() {
+	timestamp := time.Now().UnixMilli()
+
+	requestBody := map[string]interface{}{
+		"clientOid":   fmt.Sprintf("sell_%d", timestamp),
+		"symbol":      strings.ReplaceAll(kcw.config.Symbol, "/", "-"),
+		"side":        "sell",
+		"type":        "limit",
+		"size":        fmt.Sprintf("%.8f", kcw.config.SellAmount),
+		"price":       fmt.Sprintf("%.8f", kcw.config.SellPrice),
+		"timeInForce": "GTC",
 	}
 
-	// Kucoin 심볼 형식으로 변환
-	kucoinSymbol := kw.convertToKucoinSymbol(kw.order.Symbol)
-
-	// CCXT를 사용하여 지정가 매도 주문 생성
-	orderID, err := kw.exchange.CreateLimitSellOrder(
-		kucoinSymbol,
-		kw.order.Quantity,
-		price,
-		nil, // 옵션 없이 기본값 사용
-	)
+	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		kw.manager.SendSystemLog("KucoinWorker", "executeSellOrder", fmt.Sprintf("주문 실패: %v", err), "error", "", kw.order.Name, err.Error())
-		kw.sendLog(fmt.Sprintf("매도 주문 실패: %v", err), "error", price, kw.order.Quantity)
+		kcw.storage.AddLog("error", fmt.Sprintf("JSON 변환 실패: %v", err), kcw.config.Exchange, kcw.config.Symbol)
 		return
 	}
 
-	// 성공 시 응답 내용 로그
-	successMsg := fmt.Sprintf("주문 성공 (주문ID: %s)", orderID)
-	kw.manager.SendSystemLog("KucoinWorker", "executeSellOrder", successMsg, "info", "", kw.order.Name, "")
-	kw.sendLog("Kucoin 지정가 매도 주문이 접수되었습니다", "success", price, kw.order.Quantity)
+	// 서명 생성
+	signature := kcw.createKuCoinSignature(string(jsonBody), timestamp)
+
+	req, err := http.NewRequest("POST", kcw.url, bytes.NewReader(jsonBody))
+	if err != nil {
+		kcw.storage.AddLog("error", fmt.Sprintf("HTTP 요청 생성 실패: %v", err), kcw.config.Exchange, kcw.config.Symbol)
+		return
+	}
+
+	req.Header.Set("KC-API-KEY", kcw.accessKey)
+	req.Header.Set("KC-API-SIGN", signature)
+	req.Header.Set("KC-API-TIMESTAMP", strconv.FormatInt(timestamp, 10))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		kcw.storage.AddLog("error", fmt.Sprintf("HTTP 요청 실패: %v", err), kcw.config.Exchange, kcw.config.Symbol)
+		return
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		kcw.storage.AddLog("error", fmt.Sprintf("응답 파싱 실패: %v", err), kcw.config.Exchange, kcw.config.Symbol)
+		return
+	}
+
+	if resp.StatusCode == 200 {
+		orderID, ok := result["orderId"].(string)
+		if ok && orderID != "" {
+			kcw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.8f",
+				orderID, kcw.config.SellPrice, kcw.config.SellAmount), kcw.config.Exchange, kcw.config.Symbol)
+		} else {
+			kcw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
+				kcw.config.SellPrice, kcw.config.SellAmount), kcw.config.Exchange, kcw.config.Symbol)
+		}
+	} else {
+		errorMsg := "알 수 없는 오류"
+		if result["msg"] != nil {
+			errorMsg = fmt.Sprintf("%v", result["msg"])
+		}
+		kcw.storage.AddLog("error", fmt.Sprintf("쿠코인 API 오류: %s", errorMsg), kcw.config.Exchange, kcw.config.Symbol)
+	}
+}
+
+// createKuCoinSignature 쿠코인 HMAC-SHA256 서명 생성
+func (kcw *KuCoinWorker) createKuCoinSignature(body string, timestamp int64) string {
+	message := strconv.FormatInt(timestamp, 10) + "POST" + "/api/v1/orders" + body
+	h := hmac.New(sha256.New, []byte(kcw.secretKey))
+	h.Write([]byte(message))
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
-func (kw *KucoinWorker) GetPlatformName() string {
-	return "Kucoin"
-}
-
-// convertToKucoinSymbol Kucoin 심볼 형식으로 변환합니다
-func (kw *KucoinWorker) convertToKucoinSymbol(symbol string) string {
-	// 사용자 입력: "BTC/USDT" -> Kucoin 형식: "BTC-USDT"
-	parts := strings.Split(symbol, "/")
-	if len(parts) != 2 {
-		kw.sendLog(fmt.Sprintf("잘못된 심볼 형식: %s (올바른 형식: BTC/USDT)", symbol), "warning")
-		return symbol
-	}
-
-	base := strings.TrimSpace(strings.ToUpper(parts[0]))  // BTC
-	quote := strings.TrimSpace(strings.ToUpper(parts[1])) // USDT
-
-	// Kucoin 마켓 형식으로 변환
-	kucoinSymbol := base + "-" + quote // "BTC-USDT"
-
-	kw.sendLog(fmt.Sprintf("심볼 변환: %s -> %s", symbol, kucoinSymbol), "info")
-
-	return kucoinSymbol
+func (kcw *KuCoinWorker) GetPlatformName() string {
+	return "KuCoin"
 }
