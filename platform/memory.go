@@ -5,13 +5,22 @@ import (
 	"time"
 )
 
+// Config S3 설정 정보
+type Config struct {
+	Running      string   `json:"running"`      // all, target, off
+	WhiteList    []string `json:"whiteList"`    // 화이트리스트 사용자
+	MainVer      string   `json:"mainVer"`      // 선택적 업데이트 버전
+	MinVer       string   `json:"minVer"`       // 필수 업데이트 버전
+	ForceUpdate  bool     `json:"forceUpdate"`  // 강제 업데이트 여부
+}
+
 // MemoryStorage 메모리 기반 저장소
 type MemoryStorage struct {
-	mu           sync.RWMutex
-	workerConfig *WorkerConfig
-	workerStatus map[string]*WorkerStatus
-	logs         []LogEntry
-	lastUpdate   time.Time
+	mu            sync.RWMutex
+	workerConfigs map[string]*WorkerConfig
+	workerStatus  map[string]*WorkerStatus
+	logs          []LogEntry
+	lastUpdate    time.Time
 }
 
 // WorkerConfig 워커 설정
@@ -47,45 +56,61 @@ type LogEntry struct {
 // NewMemoryStorage 새로운 메모리 저장소 생성
 func NewMemoryStorage() *MemoryStorage {
 	return &MemoryStorage{
-		workerConfig: &WorkerConfig{},
-		workerStatus: make(map[string]*WorkerStatus),
-		logs:         make([]LogEntry, 0),
-		lastUpdate:   time.Now(),
+		workerConfigs: make(map[string]*WorkerConfig),
+		workerStatus:  make(map[string]*WorkerStatus),
+		logs:          make([]LogEntry, 0),
+		lastUpdate:    time.Now(),
 	}
 }
 
 // SetWorkerConfig 워커 설정 저장
-func (s *MemoryStorage) SetWorkerConfig(config *WorkerConfig) {
+func (s *MemoryStorage) SetWorkerConfig(workerKey string, config *WorkerConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.workerConfig = config
+	s.workerConfigs[workerKey] = config
 	s.lastUpdate = time.Now()
 }
 
 // GetWorkerConfig 워커 설정 조회
-func (s *MemoryStorage) GetWorkerConfig() *WorkerConfig {
+func (s *MemoryStorage) GetWorkerConfig(workerKey string) *WorkerConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.workerConfig
+	return s.workerConfigs[workerKey]
 }
 
 // SetWorkerStatus 워커 상태 설정
-func (s *MemoryStorage) SetWorkerStatus(workerKey string, status *WorkerStatus) {
+func (s *MemoryStorage) SetWorkerStatus(workerKey string, status string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.workerStatus[workerKey] = status
+	workerStatus := &WorkerStatus{
+		IsRunning:    status == "running",
+		StartedAt:    time.Now(),
+		LastRequest:  time.Now(),
+		RequestCount: 0,
+		ErrorCount:   0,
+	}
+
+	s.workerStatus[workerKey] = workerStatus
 	s.lastUpdate = time.Now()
 }
 
 // GetWorkerStatus 워커 상태 조회
-func (s *MemoryStorage) GetWorkerStatus(workerKey string) *WorkerStatus {
+func (s *MemoryStorage) GetWorkerStatus(workerKey string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.workerStatus[workerKey]
+	status := s.workerStatus[workerKey]
+	if status == nil {
+		return "stopped"
+	}
+
+	if status.IsRunning {
+		return "running"
+	}
+	return "stopped"
 }
 
 // GetAllWorkerStatus 모든 워커 상태 조회
@@ -114,13 +139,12 @@ func (s *MemoryStorage) AddLog(level, message, exchange, symbol string) {
 	}
 
 	s.logs = append(s.logs, logEntry)
+	s.lastUpdate = time.Now()
 
-	// 로그가 너무 많아지면 오래된 것부터 삭제 (최대 1000개 유지)
+	// 로그 개수 제한 (최대 1000개)
 	if len(s.logs) > 1000 {
 		s.logs = s.logs[len(s.logs)-1000:]
 	}
-
-	s.lastUpdate = time.Now()
 }
 
 // GetLogs 로그 조회
@@ -133,9 +157,13 @@ func (s *MemoryStorage) GetLogs(limit int) []LogEntry {
 	}
 
 	// 최신 로그부터 반환
-	result := make([]LogEntry, limit)
-	copy(result, s.logs[len(s.logs)-limit:])
+	start := len(s.logs) - limit
+	if start < 0 {
+		start = 0
+	}
 
+	result := make([]LogEntry, limit)
+	copy(result, s.logs[start:])
 	return result
 }
 
@@ -152,5 +180,6 @@ func (s *MemoryStorage) ClearLogs() {
 func (s *MemoryStorage) GetLastUpdate() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	return s.lastUpdate
 }

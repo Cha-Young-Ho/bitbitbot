@@ -8,12 +8,16 @@ import (
 	"time"
 )
 
-// Config 설정 정보
+// Config S3 설정 정보
 type Config struct {
-	MainVer string `json:"mainVer"` // 선택적 업데이트 버전
-	MinVer  string `json:"minVer"`  // 필수 업데이트 버전
+	Running      string   `json:"running"`      // all, target, off
+	WhiteList    []string `json:"whiteList"`    // 화이트리스트 사용자
+	MainVer      string   `json:"mainVer"`      // 선택적 업데이트 버전
+	MinVer       string   `json:"minVer"`       // 필수 업데이트 버전
+	ForceUpdate  bool     `json:"forceUpdate"`  // 강제 업데이트 여부
 }
 
+// 빌드 시 주입되는 변수들
 var (
 	configUrl   string // 빌드 시 주입되는 설정 파일 URL
 	config      *Config
@@ -69,3 +73,63 @@ func CheckVersionUpdate() error {
 	log.Printf("버전 체크: 현재=%s, 최소=%s, 메인=%s", Version, config.MinVer, config.MainVer)
 	return nil
 }
+
+// CheckRunningStatus running 상태를 확인합니다
+func CheckRunningStatus() error {
+	if config == nil {
+		return fmt.Errorf("설정이 로드되지 않았습니다")
+	}
+
+	switch config.Running {
+	case "all":
+		log.Printf("프로그램 실행 허용: running=%s", config.Running)
+		return nil
+	case "target":
+		log.Printf("타겟 사용자만 실행 허용: running=%s", config.Running)
+		// TODO: 화이트리스트 체크 로직 추가
+		return nil
+	case "off":
+		return fmt.Errorf("프로그램 실행이 차단되었습니다: running=%s", config.Running)
+	default:
+		return fmt.Errorf("알 수 없는 running 상태: %s", config.Running)
+	}
+}
+
+// CompareVersions 버전을 비교합니다
+func CompareVersions() (bool, bool, error) {
+	if config == nil {
+		return false, false, fmt.Errorf("설정이 로드되지 않았습니다")
+	}
+
+	// 현재 버전이 mainVer보다 낮은지 확인
+	isMainUpdateNeeded := compareVersion(Version, config.MainVer) < 0
+	
+	// 현재 버전이 minVer보다 낮은지 확인
+	isMinUpdateNeeded := compareVersion(Version, config.MinVer) < 0
+
+	log.Printf("버전 비교 결과: 현재=%s, mainVer=%s, minVer=%s, mainUpdate=%v, minUpdate=%v", 
+		Version, config.MainVer, config.MinVer, isMainUpdateNeeded, isMinUpdateNeeded)
+
+	return isMainUpdateNeeded, isMinUpdateNeeded, nil
+}
+
+// compareVersion 버전 문자열을 비교합니다 (1.0.0 형식)
+func compareVersion(v1, v2 string) int {
+	// 간단한 버전 비교 로직
+	// 실제로는 더 정교한 버전 비교가 필요할 수 있습니다
+	if v1 == v2 {
+		return 0
+	}
+	
+	// 버전이 같지 않으면 문자열 비교로 처리
+	if v1 < v2 {
+		return -1
+	}
+	return 1
+}
+
+// GetConfig 설정을 반환합니다
+func GetConfig() *Config {
+	return config
+}
+

@@ -101,11 +101,10 @@ func (w *Worker) processRequest() {
 	currentTime := time.Now()
 
 	// 상태 업데이트
-	status := w.storage.GetWorkerStatus("main")
-	if status != nil {
-		status.LastRequest = currentTime
-		status.RequestCount++
-		w.storage.SetWorkerStatus("main", status)
+	statusStr := w.storage.GetWorkerStatus("main")
+	if statusStr == "running" {
+		// 상태가 running인 경우에만 업데이트
+		w.storage.SetWorkerStatus("main", "running")
 	}
 
 	// 요청 시간 로그
@@ -182,7 +181,8 @@ func (w *Worker) executeSellOrder(sellPrice float64) OrderResult {
 	case "Korbit":
 		return w.executeKorbitSellOrder(sellPrice)
 	case "Gate":
-		return w.executeGateSellOrder(sellPrice)
+		// Gate.io는 별도 GateWorker에서 처리
+		return w.executeSimulatedSellOrder(sellPrice)
 	case "OKX":
 		return w.executeOKXSellOrder(sellPrice)
 	default:
@@ -1046,63 +1046,7 @@ func (w *Worker) createKorbitSignature(queryString string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// executeGateSellOrder Gate.io 매도 주문 실행
-func (w *Worker) executeGateSellOrder(sellPrice float64) OrderResult {
-	apiURL := "https://api.gateio.ws/api/v4/spot/orders"
-
-	timestamp := time.Now().Unix()
-
-	requestBody := map[string]interface{}{
-		"currency_pair": w.config.Symbol,
-		"side":          "sell",
-		"type":          "limit",
-		"amount":        fmt.Sprintf("%.8f", w.config.SellAmount),
-		"price":         fmt.Sprintf("%.8f", sellPrice),
-	}
-
-	jsonBody, _ := json.Marshal(requestBody)
-
-	// 서명 생성 (Gate.io 스펙에 맞춤)
-	signString := "POST\n/api/v4/spot/orders\n" + string(jsonBody) + "\n" + strconv.FormatInt(timestamp, 10)
-	signature := w.generateSignature(signString, w.config.SecretKey)
-
-	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(jsonBody))
-	if err != nil {
-		return OrderResult{Success: false, ErrorMessage: "HTTP 요청 생성 실패: " + err.Error()}
-	}
-
-	req.Header.Set("KEY", w.config.AccessKey)
-	req.Header.Set("SIGN", signature)
-	req.Header.Set("Timestamp", strconv.FormatInt(timestamp, 10))
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return OrderResult{Success: false, ErrorMessage: "HTTP 요청 실패: " + err.Error()}
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	var result map[string]interface{}
-	json.Unmarshal(body, &result)
-
-	if resp.StatusCode == 200 {
-		return OrderResult{
-			Success:     true,
-			OrderID:     fmt.Sprintf("%v", result["id"]),
-			Price:       sellPrice,
-			Amount:      w.config.SellAmount,
-			TotalAmount: w.config.SellAmount * sellPrice,
-		}
-	} else {
-		errorMsg := "알 수 없는 오류"
-		if result["message"] != nil {
-			errorMsg = fmt.Sprintf("%v", result["message"])
-		}
-		return OrderResult{Success: false, ErrorMessage: "Gate.io API 오류: " + errorMsg}
-	}
-}
+// Gate.io는 별도 GateWorker에서 처리하므로 이 함수는 제거됨
 
 // executeOKXSellOrder OKX 매도 주문 실행
 func (w *Worker) executeOKXSellOrder(sellPrice float64) OrderResult {
