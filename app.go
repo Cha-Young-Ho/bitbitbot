@@ -220,12 +220,12 @@ func (a *App) performInitialCheck() error {
 	return nil
 }
 
-// continuousVersionCheck 지속적인 버전 체크 (30초마다)
+// continuousVersionCheck 지속적인 버전 체크 (30분마다)
 func (a *App) continuousVersionCheck() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
 
-	log.Println("지속적인 버전 체크가 시작되었습니다 (30초 간격)")
+	log.Println("지속적인 버전 체크가 시작되었습니다 (30분 간격)")
 
 	for {
 		select {
@@ -237,12 +237,12 @@ func (a *App) continuousVersionCheck() {
 	}
 }
 
-// continuousStatusCheck 지속적인 상태 체크 (30초마다)
+// continuousStatusCheck 지속적인 상태 체크 (30분마다)
 func (a *App) continuousStatusCheck() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
 
-	log.Println("지속적인 상태 체크가 시작되었습니다 (30초 간격)")
+	log.Println("지속적인 상태 체크가 시작되었습니다 (30분 간격)")
 
 	for {
 		select {
