@@ -2,14 +2,14 @@
 
 # Windows 빌드 스크립트
 # 사용법: ./build-window.sh <VERSION> <ENVIRONMENT> <BUCKET_NAME>
-# 예시: ./build-window.sh 0.0.7 prod yh-bitbit-bucket
+# 예시: ./build-window.sh 0.0.7 prod aa
 
 set -e
 
 # 인자 확인
 if [ $# -ne 3 ]; then
     echo "사용법: $0 <VERSION> <ENVIRONMENT> <BUCKET_NAME>"
-    echo "예시: $0 0.0.7 prod yh-bitbit-bucket"
+    echo "예시: $0 0.0.7 prod aa"
     exit 1
 fi
 
