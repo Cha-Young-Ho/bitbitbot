@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	ccxt "github.com/ccxt/ccxt/go/v4"
@@ -11,6 +12,7 @@ import (
 
 // OKXWorker OKX 거래소 워커
 type OKXWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -51,7 +53,10 @@ func NewOKXWorker(config *WorkerConfig, storage *MemoryStorage) *OKXWorker {
 
 // Start 워커를 시작합니다
 func (ow *OKXWorker) Start(ctx context.Context) {
+	ow.mu.Lock()
 	ow.running = true
+	ow.mu.Unlock()
+	
 	ow.storage.AddLog("info", "OKX 워커가 시작되었습니다.", ow.config.Exchange, ow.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -65,36 +70,69 @@ func (ow *OKXWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		ow.mu.RLock()
+		if !ow.running {
+			ow.mu.RUnlock()
+			ow.storage.AddLog("info", "OKX 워커가 중지되었습니다.", ow.config.Exchange, ow.config.Symbol)
+			return
+		}
+		ow.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			ow.mu.Lock()
 			ow.running = false
+			ow.mu.Unlock()
 			ow.storage.AddLog("info", "OKX 워커가 중지되었습니다.", ow.config.Exchange, ow.config.Symbol)
 			return
 		case <-ow.stopCh:
+			ow.mu.Lock()
 			ow.running = false
+			ow.mu.Unlock()
 			ow.storage.AddLog("info", "OKX 워커가 중지되었습니다.", ow.config.Exchange, ow.config.Symbol)
 			return
 		case <-ticker.C:
-			ow.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			ow.mu.RLock()
+			if ow.running {
+				ow.mu.RUnlock()
+				ow.executeSellOrder()
+			} else {
+				ow.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (ow *OKXWorker) Stop() {
+	ow.mu.Lock()
+	defer ow.mu.Unlock()
+	
 	if ow.running {
-		close(ow.stopCh)
 		ow.running = false
+		close(ow.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (ow *OKXWorker) IsRunning() bool {
+	ow.mu.RLock()
+	defer ow.mu.RUnlock()
 	return ow.running
 }
 
 // executeSellOrder OKX에서 매도 주문 실행
 func (ow *OKXWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	ow.mu.RLock()
+	if !ow.running {
+		ow.mu.RUnlock()
+		return
+	}
+	ow.mu.RUnlock()
 	// 거래소가 nil인 경우 에러 처리
 	if ow.exchange == nil {
 		ow.storage.AddLog("error", "거래소가 초기화되지 않았습니다", ow.config.Exchange, ow.config.Symbol)

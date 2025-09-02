@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 // HuobiWorker 후오비 거래소 워커
 type HuobiWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -39,7 +41,10 @@ func NewHuobiWorker(config *WorkerConfig, storage *MemoryStorage) *HuobiWorker {
 
 // Start 워커를 시작합니다
 func (hw *HuobiWorker) Start(ctx context.Context) {
+	hw.mu.Lock()
 	hw.running = true
+	hw.mu.Unlock()
+	
 	hw.storage.AddLog("info", "후오비 워커가 시작되었습니다.", hw.config.Exchange, hw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -53,36 +58,70 @@ func (hw *HuobiWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		hw.mu.RLock()
+		if !hw.running {
+			hw.mu.RUnlock()
+			hw.storage.AddLog("info", "후오비 워커가 중지되었습니다.", hw.config.Exchange, hw.config.Symbol)
+			return
+		}
+		hw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			hw.mu.Lock()
 			hw.running = false
+			hw.mu.Unlock()
 			hw.storage.AddLog("info", "후오비 워커가 중지되었습니다.", hw.config.Exchange, hw.config.Symbol)
 			return
 		case <-hw.stopCh:
+			hw.mu.Lock()
 			hw.running = false
+			hw.mu.Unlock()
 			hw.storage.AddLog("info", "후오비 워커가 중지되었습니다.", hw.config.Exchange, hw.config.Symbol)
 			return
 		case <-ticker.C:
-			hw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			hw.mu.RLock()
+			if hw.running {
+				hw.mu.RUnlock()
+				hw.executeSellOrder()
+			} else {
+				hw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (hw *HuobiWorker) Stop() {
+	hw.mu.Lock()
+	defer hw.mu.Unlock()
+	
 	if hw.running {
-		close(hw.stopCh)
 		hw.running = false
+		close(hw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (hw *HuobiWorker) IsRunning() bool {
+	hw.mu.RLock()
+	defer hw.mu.RUnlock()
 	return hw.running
 }
 
 // executeSellOrder 후오비에서 매도 주문 실행
 func (hw *HuobiWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	hw.mu.RLock()
+	if !hw.running {
+		hw.mu.RUnlock()
+		return
+	}
+	hw.mu.RUnlock()
+
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05")
 
 	requestBody := map[string]interface{}{

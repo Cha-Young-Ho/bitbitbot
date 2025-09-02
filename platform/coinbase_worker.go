@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // CoinbaseWorker 코인베이스 거래소 워커
 type CoinbaseWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -40,7 +42,10 @@ func NewCoinbaseWorker(config *WorkerConfig, storage *MemoryStorage) *CoinbaseWo
 
 // Start 워커를 시작합니다
 func (cbw *CoinbaseWorker) Start(ctx context.Context) {
+	cbw.mu.Lock()
 	cbw.running = true
+	cbw.mu.Unlock()
+	
 	cbw.storage.AddLog("info", "코인베이스 워커가 시작되었습니다.", cbw.config.Exchange, cbw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -54,36 +59,70 @@ func (cbw *CoinbaseWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		cbw.mu.RLock()
+		if !cbw.running {
+			cbw.mu.RUnlock()
+			cbw.storage.AddLog("info", "코인베이스 워커가 중지되었습니다.", cbw.config.Exchange, cbw.config.Symbol)
+			return
+		}
+		cbw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			cbw.mu.Lock()
 			cbw.running = false
+			cbw.mu.Unlock()
 			cbw.storage.AddLog("info", "코인베이스 워커가 중지되었습니다.", cbw.config.Exchange, cbw.config.Symbol)
 			return
 		case <-cbw.stopCh:
+			cbw.mu.Lock()
 			cbw.running = false
+			cbw.mu.Unlock()
 			cbw.storage.AddLog("info", "코인베이스 워커가 중지되었습니다.", cbw.config.Exchange, cbw.config.Symbol)
 			return
 		case <-ticker.C:
-			cbw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			cbw.mu.RLock()
+			if cbw.running {
+				cbw.mu.RUnlock()
+				cbw.executeSellOrder()
+			} else {
+				cbw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (cbw *CoinbaseWorker) Stop() {
+	cbw.mu.Lock()
+	defer cbw.mu.Unlock()
+	
 	if cbw.running {
-		close(cbw.stopCh)
 		cbw.running = false
+		close(cbw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (cbw *CoinbaseWorker) IsRunning() bool {
+	cbw.mu.RLock()
+	defer cbw.mu.RUnlock()
 	return cbw.running
 }
 
 // executeSellOrder 코인베이스에서 매도 주문 실행
 func (cbw *CoinbaseWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	cbw.mu.RLock()
+	if !cbw.running {
+		cbw.mu.RUnlock()
+		return
+	}
+	cbw.mu.RUnlock()
+
 	timestamp := time.Now().Unix()
 
 	requestBody := map[string]interface{}{

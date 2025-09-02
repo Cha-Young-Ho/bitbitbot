@@ -1,7 +1,6 @@
 package platform
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 )
@@ -17,23 +16,14 @@ type VersionChecker interface {
 
 // Handler 워커 관리 핸들러
 type Handler struct {
-	storage       *MemoryStorage
-	worker        WorkerInterface
-	ctx           context.Context
-	cancelFunc    context.CancelFunc
-	factory       *WorkerFactory
+	workerManager *WorkerManager
 	versionChecker VersionChecker
 }
 
 // NewHandler 새로운 핸들러 생성
 func NewHandler() *Handler {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Handler{
-		storage:       NewMemoryStorage(),
-		worker:        nil,
-		ctx:           ctx,
-		cancelFunc:    cancel,
-		factory:       NewWorkerFactory(),
+		workerManager: NewWorkerManager(),
 		versionChecker: nil, // main 패키지에서 주입받아야 함
 	}
 }
@@ -105,122 +95,43 @@ func (h *Handler) SetWorkerConfig(exchange, accessKey, secretKey, passwordPhrase
 		SellPrice:       price,
 	}
 
-	h.storage.SetWorkerConfig("main", config)
-
-	return map[string]interface{}{
-		"success": true,
-		"message": "워커 설정이 저장되었습니다.",
-	}
+	return h.workerManager.SetWorkerConfig("main", config)
 }
 
 // GetWorkerConfig 워커 설정 조회
 func (h *Handler) GetWorkerConfig() map[string]interface{} {
-	config := h.storage.GetWorkerConfig("main")
-	if config == nil {
-		return map[string]interface{}{
-			"success": false,
-			"message": "저장된 워커 설정이 없습니다.",
-		}
-	}
-
-	return map[string]interface{}{
-		"success": true,
-		"config":  config,
-	}
+	return h.workerManager.GetWorkerConfig("main")
 }
 
 // StartWorker 워커 시작
 func (h *Handler) StartWorker() map[string]interface{} {
-	config := h.storage.GetWorkerConfig("main")
-	if config == nil {
-		return map[string]interface{}{
-			"success": false,
-			"message": "워커 설정이 없습니다. 먼저 설정해주세요.",
-		}
+	config := h.workerManager.GetWorkerConfig("main")
+	if config["success"] == false {
+		return config
 	}
 
-	// 이미 실행 중인 경우
-	if h.worker != nil && h.worker.IsRunning() {
-		return map[string]interface{}{
-			"success": false,
-			"message": "워커가 이미 실행 중입니다.",
-		}
-	}
-
-	// 워커 생성
-	worker, err := h.factory.CreateWorker(config, h.storage)
-	if err != nil {
-		h.storage.AddLog("error", fmt.Sprintf("워커 생성 실패: %v", err), config.Exchange, config.Symbol)
-		return map[string]interface{}{
-			"success": false,
-			"message": fmt.Sprintf("워커 생성 실패: %v", err),
-		}
-	}
-
-	// 워커 시작
-	worker.Start(h.ctx)
-	h.worker = worker
-
-	// 상태 업데이트
-	h.storage.SetWorkerStatus("main", "running")
-
-	return map[string]interface{}{
-		"success": true,
-		"message": "워커가 시작되었습니다.",
-	}
+	workerConfig := config["config"].(*WorkerConfig)
+	return h.workerManager.StartWorker("main", workerConfig)
 }
 
 // StopWorker 워커 중지
 func (h *Handler) StopWorker() map[string]interface{} {
-	if h.worker == nil || !h.worker.IsRunning() {
-		return map[string]interface{}{
-			"success": false,
-			"message": "실행 중인 워커가 없습니다.",
-		}
-	}
-
-	h.worker.Stop()
-	h.worker = nil
-
-	// 상태 업데이트
-	h.storage.SetWorkerStatus("main", "stopped")
-
-	return map[string]interface{}{
-		"success": true,
-		"message": "워커가 중지되었습니다.",
-	}
+	return h.workerManager.StopWorker("main")
 }
 
 // GetWorkerStatus 워커 상태 조회
 func (h *Handler) GetWorkerStatus() map[string]interface{} {
-	status := h.storage.GetWorkerStatus("main")
-	return map[string]interface{}{
-		"success": true,
-		"status":  status,
-	}
+	return h.workerManager.GetWorkerStatus("main")
 }
 
 // GetLogs 로그 조회
 func (h *Handler) GetLogs(limit int) map[string]interface{} {
-	if limit <= 0 {
-		limit = 100 // 기본값
-	}
-
-	logs := h.storage.GetLogs(limit)
-	return map[string]interface{}{
-		"success": true,
-		"logs":    logs,
-		"count":   len(logs),
-	}
+	return h.workerManager.GetLogs(limit)
 }
 
 // ClearLogs 로그 초기화
 func (h *Handler) ClearLogs() map[string]interface{} {
-	h.storage.ClearLogs()
-	return map[string]interface{}{
-		"success": true,
-		"message": "로그가 초기화되었습니다.",
-	}
+	return h.workerManager.ClearLogs()
 }
 
 // CheckVersion 버전 체크
@@ -235,7 +146,7 @@ func (h *Handler) CheckVersion() map[string]interface{} {
 
 	// S3에서 설정 로드
 	if err := h.versionChecker.CheckVersionUpdate(); err != nil {
-		h.storage.AddLog("error", fmt.Sprintf("S3 설정 로드 실패: %v", err), "", "")
+		h.workerManager.storage.AddLog("error", fmt.Sprintf("S3 설정 로드 실패: %v", err), "", "")
 		return map[string]interface{}{
 			"success": false,
 			"message": fmt.Sprintf("설정 로드 실패: %v", err),
@@ -244,7 +155,7 @@ func (h *Handler) CheckVersion() map[string]interface{} {
 
 	// running 상태 체크
 	if err := h.versionChecker.CheckRunningStatus(); err != nil {
-		h.storage.AddLog("error", fmt.Sprintf("실행 상태 체크 실패: %v", err), "", "")
+		h.workerManager.storage.AddLog("error", fmt.Sprintf("실행 상태 체크 실패: %v", err), "", "")
 		return map[string]interface{}{
 			"success": false,
 			"message": fmt.Sprintf("실행 상태 체크 실패: %v", err),
@@ -254,7 +165,7 @@ func (h *Handler) CheckVersion() map[string]interface{} {
 	// 버전 비교
 	isMainUpdateNeeded, isMinUpdateNeeded, err := h.versionChecker.CompareVersions()
 	if err != nil {
-		h.storage.AddLog("error", fmt.Sprintf("버전 비교 실패: %v", err), "", "")
+		h.workerManager.storage.AddLog("error", fmt.Sprintf("버전 비교 실패: %v", err), "", "")
 		return map[string]interface{}{
 			"success": false,
 			"message": fmt.Sprintf("버전 비교 실패: %v", err),
@@ -286,7 +197,7 @@ func (h *Handler) CheckVersion() map[string]interface{} {
 		updateType = "recommended" // 권장 업데이트
 	}
 
-	h.storage.AddLog("info", fmt.Sprintf("버전 체크: 현재 %s, 최신 %s, 업데이트 타입: %s", 
+	h.workerManager.storage.AddLog("info", fmt.Sprintf("버전 체크: 현재 %s, 최신 %s, 업데이트 타입: %s", 
 		currentVersion, latestVersion, updateType), "", "")
 
 	return map[string]interface{}{
@@ -304,8 +215,5 @@ func (h *Handler) CheckVersion() map[string]interface{} {
 
 // Cleanup 정리
 func (h *Handler) Cleanup() {
-	if h.worker != nil {
-		h.worker.Stop()
-	}
-	h.cancelFunc()
+	h.workerManager.Cleanup()
 }

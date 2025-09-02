@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,7 @@ type BinanceWorker struct {
 	accessKey string
 	secretKey string
 	url       string
+	mu        sync.RWMutex
 }
 
 // NewBinanceWorker 새로운 바이낸스 워커를 생성합니다
@@ -40,7 +42,10 @@ func NewBinanceWorker(config *WorkerConfig, storage *MemoryStorage) *BinanceWork
 
 // Start 워커를 시작합니다
 func (bw *BinanceWorker) Start(ctx context.Context) {
+	bw.mu.Lock()
 	bw.running = true
+	bw.mu.Unlock()
+	
 	bw.storage.AddLog("info", "바이낸스 워커가 시작되었습니다.", bw.config.Exchange, bw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -54,36 +59,70 @@ func (bw *BinanceWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		bw.mu.RLock()
+		if !bw.running {
+			bw.mu.RUnlock()
+			bw.storage.AddLog("info", "바이낸스 워커가 중지되었습니다.", bw.config.Exchange, bw.config.Symbol)
+			return
+		}
+		bw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			bw.mu.Lock()
 			bw.running = false
+			bw.mu.Unlock()
 			bw.storage.AddLog("info", "바이낸스 워커가 중지되었습니다.", bw.config.Exchange, bw.config.Symbol)
 			return
 		case <-bw.stopCh:
+			bw.mu.Lock()
 			bw.running = false
+			bw.mu.Unlock()
 			bw.storage.AddLog("info", "바이낸스 워커가 중지되었습니다.", bw.config.Exchange, bw.config.Symbol)
 			return
 		case <-ticker.C:
-			bw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			bw.mu.RLock()
+			if bw.running {
+				bw.mu.RUnlock()
+				bw.executeSellOrder()
+			} else {
+				bw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (bw *BinanceWorker) Stop() {
+	bw.mu.Lock()
+	defer bw.mu.Unlock()
+	
 	if bw.running {
-		close(bw.stopCh)
 		bw.running = false
+		close(bw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (bw *BinanceWorker) IsRunning() bool {
+	bw.mu.RLock()
+	defer bw.mu.RUnlock()
 	return bw.running
 }
 
 // executeSellOrder 바이낸스에서 매도 주문 실행
 func (bw *BinanceWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	bw.mu.RLock()
+	if !bw.running {
+		bw.mu.RUnlock()
+		return
+	}
+	bw.mu.RUnlock()
+
 	timestamp := time.Now().UnixMilli()
 
 	params := url.Values{}

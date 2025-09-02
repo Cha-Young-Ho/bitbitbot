@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // MexcWorker MEXC 거래소 워커
 type MexcWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -40,7 +42,10 @@ func NewMexcWorker(config *WorkerConfig, storage *MemoryStorage) *MexcWorker {
 
 // Start 워커를 시작합니다
 func (mw *MexcWorker) Start(ctx context.Context) {
+	mw.mu.Lock()
 	mw.running = true
+	mw.mu.Unlock()
+	
 	mw.storage.AddLog("info", "MEXC 워커가 시작되었습니다.", mw.config.Exchange, mw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -54,36 +59,70 @@ func (mw *MexcWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		mw.mu.RLock()
+		if !mw.running {
+			mw.mu.RUnlock()
+			mw.storage.AddLog("info", "MEXC 워커가 중지되었습니다.", mw.config.Exchange, mw.config.Symbol)
+			return
+		}
+		mw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			mw.mu.Lock()
 			mw.running = false
+			mw.mu.Unlock()
 			mw.storage.AddLog("info", "MEXC 워커가 중지되었습니다.", mw.config.Exchange, mw.config.Symbol)
 			return
 		case <-mw.stopCh:
+			mw.mu.Lock()
 			mw.running = false
+			mw.mu.Unlock()
 			mw.storage.AddLog("info", "MEXC 워커가 중지되었습니다.", mw.config.Exchange, mw.config.Symbol)
 			return
 		case <-ticker.C:
-			mw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			mw.mu.RLock()
+			if mw.running {
+				mw.mu.RUnlock()
+				mw.executeSellOrder()
+			} else {
+				mw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (mw *MexcWorker) Stop() {
+	mw.mu.Lock()
+	defer mw.mu.Unlock()
+	
 	if mw.running {
-		close(mw.stopCh)
 		mw.running = false
+		close(mw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (mw *MexcWorker) IsRunning() bool {
+	mw.mu.RLock()
+	defer mw.mu.RUnlock()
 	return mw.running
 }
 
 // executeSellOrder MEXC에서 매도 주문 실행
 func (mw *MexcWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	mw.mu.RLock()
+	if !mw.running {
+		mw.mu.RUnlock()
+		return
+	}
+	mw.mu.RUnlock()
+
 	timestamp := time.Now().UnixMilli()
 
 	params := map[string]string{

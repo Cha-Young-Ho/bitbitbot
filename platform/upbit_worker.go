@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -19,6 +20,7 @@ import (
 
 // UpbitWorker 업비트 거래소 워커
 type UpbitWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -43,7 +45,10 @@ func NewUpbitWorker(config *WorkerConfig, storage *MemoryStorage) *UpbitWorker {
 
 // Start 워커를 시작합니다
 func (uw *UpbitWorker) Start(ctx context.Context) {
+	uw.mu.Lock()
 	uw.running = true
+	uw.mu.Unlock()
+	
 	uw.storage.AddLog("info", "업비트 워커가 시작되었습니다.", uw.config.Exchange, uw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -57,36 +62,70 @@ func (uw *UpbitWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		uw.mu.RLock()
+		if !uw.running {
+			uw.mu.RUnlock()
+			uw.storage.AddLog("info", "업비트 워커가 중지되었습니다.", uw.config.Exchange, uw.config.Symbol)
+			return
+		}
+		uw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			uw.mu.Lock()
 			uw.running = false
+			uw.mu.Unlock()
 			uw.storage.AddLog("info", "업비트 워커가 중지되었습니다.", uw.config.Exchange, uw.config.Symbol)
 			return
 		case <-uw.stopCh:
+			uw.mu.Lock()
 			uw.running = false
+			uw.mu.Unlock()
 			uw.storage.AddLog("info", "업비트 워커가 중지되었습니다.", uw.config.Exchange, uw.config.Symbol)
 			return
 		case <-ticker.C:
-			uw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			uw.mu.RLock()
+			if uw.running {
+				uw.mu.RUnlock()
+				uw.executeSellOrder()
+			} else {
+				uw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (uw *UpbitWorker) Stop() {
+	uw.mu.Lock()
+	defer uw.mu.Unlock()
+	
 	if uw.running {
-		close(uw.stopCh)
 		uw.running = false
+		close(uw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (uw *UpbitWorker) IsRunning() bool {
+	uw.mu.RLock()
+	defer uw.mu.RUnlock()
 	return uw.running
 }
 
 // executeSellOrder 업비트에서 매도 주문 실행
 func (uw *UpbitWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	uw.mu.RLock()
+	if !uw.running {
+		uw.mu.RUnlock()
+		return
+	}
+	uw.mu.RUnlock()
+
 	// 업비트 마켓 형식으로 변환 (BTC/KRW -> KRW-BTC)
 	market := uw.toUpbitMarket(uw.config.Symbol)
 

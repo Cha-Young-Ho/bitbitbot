@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 // BithumbWorker 빗썸 거래소 워커
 type BithumbWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -39,7 +41,10 @@ func NewBithumbWorker(config *WorkerConfig, storage *MemoryStorage) *BithumbWork
 
 // Start 워커를 시작합니다
 func (bw *BithumbWorker) Start(ctx context.Context) {
+	bw.mu.Lock()
 	bw.running = true
+	bw.mu.Unlock()
+	
 	bw.storage.AddLog("info", "빗썸 워커가 시작되었습니다.", bw.config.Exchange, bw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -53,36 +58,70 @@ func (bw *BithumbWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		bw.mu.RLock()
+		if !bw.running {
+			bw.mu.RUnlock()
+			bw.storage.AddLog("info", "빗썸 워커가 중지되었습니다.", bw.config.Exchange, bw.config.Symbol)
+			return
+		}
+		bw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			bw.mu.Lock()
 			bw.running = false
+			bw.mu.Unlock()
 			bw.storage.AddLog("info", "빗썸 워커가 중지되었습니다.", bw.config.Exchange, bw.config.Symbol)
 			return
 		case <-bw.stopCh:
+			bw.mu.Lock()
 			bw.running = false
+			bw.mu.Unlock()
 			bw.storage.AddLog("info", "빗썸 워커가 중지되었습니다.", bw.config.Exchange, bw.config.Symbol)
 			return
 		case <-ticker.C:
-			bw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			bw.mu.RLock()
+			if bw.running {
+				bw.mu.RUnlock()
+				bw.executeSellOrder()
+			} else {
+				bw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (bw *BithumbWorker) Stop() {
+	bw.mu.Lock()
+	defer bw.mu.Unlock()
+	
 	if bw.running {
-		close(bw.stopCh)
 		bw.running = false
+		close(bw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (bw *BithumbWorker) IsRunning() bool {
+	bw.mu.RLock()
+	defer bw.mu.RUnlock()
 	return bw.running
 }
 
 // executeSellOrder 빗썸에서 매도 주문 실행
 func (bw *BithumbWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	bw.mu.RLock()
+	if !bw.running {
+		bw.mu.RUnlock()
+		return
+	}
+	bw.mu.RUnlock()
+
 	// 심볼 변환 (BTC/KRW -> BTC)
 	bithumbSymbol := bw.convertToBithumbSymbol(bw.config.Symbol)
 

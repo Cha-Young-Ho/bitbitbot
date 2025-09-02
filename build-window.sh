@@ -40,25 +40,54 @@ fi
 
 echo "Windows 빌드 완료: build/bin/bitbit-app.exe"
 
-# S3 업로드용 파일 생성
-if [ ! -z "$UPDATE_URL" ]; then
-    S3_FILENAME="window_build.${VERSION}"
-    S3_FILEPATH="build/${S3_FILENAME}"
-    S3_ZIP_FILENAME="window_build.${VERSION}.zip"
-    S3_ZIP_FILEPATH="build/${S3_ZIP_FILENAME}"
-    
-    # 실행 파일을 S3 업로드용으로 복사
-    cp "build/bin/bitbit-app.exe" "$S3_FILEPATH"
-    chmod +x "$S3_FILEPATH"
-    
-    # zip 파일 생성
-    cd build
-    zip "$S3_ZIP_FILENAME" "$S3_FILENAME"
-    cd ..
-    
-    echo "S3 업로드용 파일 생성: $S3_FILEPATH"
-    echo "S3 업로드용 ZIP 파일 생성: $S3_ZIP_FILEPATH"
-    echo "업데이트 URL: $UPDATE_URL"
-fi
+# 친구용 배포 패키지 생성
+echo "친구용 배포 패키지 생성 중..."
+
+# 배포 디렉토리 생성
+DEPLOY_DIR="build/bitbit-app-windows-${VERSION}"
+mkdir -p "$DEPLOY_DIR"
+
+# 실행파일 복사
+cp "build/bin/bitbit-app.exe" "$DEPLOY_DIR/"
+
+# README 파일 생성
+cat > "$DEPLOY_DIR/README.txt" << EOF
+BitBit Bot - Windows 실행파일
+버전: ${VERSION}
+환경: ${ENVIRONMENT}
+
+사용법:
+1. 이 폴더의 모든 파일을 윈도우 컴퓨터의 원하는 위치에 복사하세요
+2. bitbit-app.exe 파일을 더블클릭하여 실행하세요
+3. 프로그램이 자동으로 시작됩니다
+
+주의사항:
+- Windows 10/11에서 실행됩니다
+- 바이러스 백신 프로그램에서 차단될 수 있습니다 (정상적인 프로그램입니다)
+- 실행이 안 될 경우 우클릭 > "관리자 권한으로 실행"을 시도해보세요
+
+문제가 발생하면 개발자에게 문의하세요.
+EOF
+
+# 실행 배치 파일 생성 (Windows용)
+cat > "$DEPLOY_DIR/실행.bat" << EOF
+@echo off
+echo BitBit Bot을 시작합니다...
+start bitbit-app.exe
+echo 프로그램이 백그라운드에서 실행됩니다.
+pause
+EOF
+
+# 친구용 ZIP 파일 생성
+cd build
+zip -r "bitbit-app-windows-${VERSION}.zip" "bitbit-app-windows-${VERSION}"
+cd ..
+
+echo "친구용 배포 패키지 생성 완료!"
+echo "배포 디렉토리: $DEPLOY_DIR"
+echo "ZIP 파일: build/bitbit-app-windows-${VERSION}.zip"
+echo ""
+echo "친구에게 전달할 파일: build/bitbit-app-windows-${VERSION}.zip"
+echo "압축을 풀면 바로 실행할 수 있습니다!"
 
 echo "Windows 빌드 완료!"

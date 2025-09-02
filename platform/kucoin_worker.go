@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // KuCoinWorker 쿠코인 거래소 워커
 type KuCoinWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -40,7 +42,10 @@ func NewKuCoinWorker(config *WorkerConfig, storage *MemoryStorage) *KuCoinWorker
 
 // Start 워커를 시작합니다
 func (kcw *KuCoinWorker) Start(ctx context.Context) {
+	kcw.mu.Lock()
 	kcw.running = true
+	kcw.mu.Unlock()
+	
 	kcw.storage.AddLog("info", "쿠코인 워커가 시작되었습니다.", kcw.config.Exchange, kcw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -54,36 +59,70 @@ func (kcw *KuCoinWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		kcw.mu.RLock()
+		if !kcw.running {
+			kcw.mu.RUnlock()
+			kcw.storage.AddLog("info", "쿠코인 워커가 중지되었습니다.", kcw.config.Exchange, kcw.config.Symbol)
+			return
+		}
+		kcw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			kcw.mu.Lock()
 			kcw.running = false
+			kcw.mu.Unlock()
 			kcw.storage.AddLog("info", "쿠코인 워커가 중지되었습니다.", kcw.config.Exchange, kcw.config.Symbol)
 			return
 		case <-kcw.stopCh:
+			kcw.mu.Lock()
 			kcw.running = false
+			kcw.mu.Unlock()
 			kcw.storage.AddLog("info", "쿠코인 워커가 중지되었습니다.", kcw.config.Exchange, kcw.config.Symbol)
 			return
 		case <-ticker.C:
-			kcw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			kcw.mu.RLock()
+			if kcw.running {
+				kcw.mu.RUnlock()
+				kcw.executeSellOrder()
+			} else {
+				kcw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (kcw *KuCoinWorker) Stop() {
+	kcw.mu.Lock()
+	defer kcw.mu.Unlock()
+	
 	if kcw.running {
-		close(kcw.stopCh)
 		kcw.running = false
+		close(kcw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (kcw *KuCoinWorker) IsRunning() bool {
+	kcw.mu.RLock()
+	defer kcw.mu.RUnlock()
 	return kcw.running
 }
 
 // executeSellOrder 쿠코인에서 매도 주문 실행
 func (kcw *KuCoinWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	kcw.mu.RLock()
+	if !kcw.running {
+		kcw.mu.RUnlock()
+		return
+	}
+	kcw.mu.RUnlock()
+
 	timestamp := time.Now().UnixMilli()
 
 	requestBody := map[string]interface{}{

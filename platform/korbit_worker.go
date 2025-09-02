@@ -11,11 +11,13 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // KorbitWorker 코빗 거래소 워커
 type KorbitWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -40,7 +42,10 @@ func NewKorbitWorker(config *WorkerConfig, storage *MemoryStorage) *KorbitWorker
 
 // Start 워커를 시작합니다
 func (kw *KorbitWorker) Start(ctx context.Context) {
+	kw.mu.Lock()
 	kw.running = true
+	kw.mu.Unlock()
+	
 	kw.storage.AddLog("info", "코빗 워커가 시작되었습니다.", kw.config.Exchange, kw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -54,36 +59,70 @@ func (kw *KorbitWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		kw.mu.RLock()
+		if !kw.running {
+			kw.mu.RUnlock()
+			kw.storage.AddLog("info", "코빗 워커가 중지되었습니다.", kw.config.Exchange, kw.config.Symbol)
+			return
+		}
+		kw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			kw.mu.Lock()
 			kw.running = false
+			kw.mu.Unlock()
 			kw.storage.AddLog("info", "코빗 워커가 중지되었습니다.", kw.config.Exchange, kw.config.Symbol)
 			return
 		case <-kw.stopCh:
+			kw.mu.Lock()
 			kw.running = false
+			kw.mu.Unlock()
 			kw.storage.AddLog("info", "코빗 워커가 중지되었습니다.", kw.config.Exchange, kw.config.Symbol)
 			return
 		case <-ticker.C:
-			kw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			kw.mu.RLock()
+			if kw.running {
+				kw.mu.RUnlock()
+				kw.executeSellOrder()
+			} else {
+				kw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (kw *KorbitWorker) Stop() {
+	kw.mu.Lock()
+	defer kw.mu.Unlock()
+	
 	if kw.running {
-		close(kw.stopCh)
 		kw.running = false
+		close(kw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (kw *KorbitWorker) IsRunning() bool {
+	kw.mu.RLock()
+	defer kw.mu.RUnlock()
 	return kw.running
 }
 
 // executeSellOrder 코빗에서 매도 주문 실행
 func (kw *KorbitWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	kw.mu.RLock()
+	if !kw.running {
+		kw.mu.RUnlock()
+		return
+	}
+	kw.mu.RUnlock()
+
 	// 심볼 변환 (BTC/KRW -> btc_krw)
 	korbitSymbol := kw.convertToKorbitSymbol(kw.config.Symbol)
 

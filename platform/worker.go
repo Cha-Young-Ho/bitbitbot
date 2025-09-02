@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -30,6 +31,7 @@ type Worker struct {
 	storage *MemoryStorage
 	running bool
 	stopCh  chan struct{}
+	mu      sync.RWMutex
 }
 
 // NewWorker 새로운 워커 생성
@@ -49,7 +51,10 @@ func (w *Worker) GetPlatformName() string {
 
 // Start 워커 시작
 func (w *Worker) Start(ctx context.Context) {
+	w.mu.Lock()
 	w.running = true
+	w.mu.Unlock()
+	
 	w.storage.AddLog("info", "워커가 시작되었습니다.", w.config.Exchange, w.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -68,36 +73,70 @@ func (w *Worker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		w.mu.RLock()
+		if !w.running {
+			w.mu.RUnlock()
+			w.storage.AddLog("info", "워커가 중지되었습니다.", w.config.Exchange, w.config.Symbol)
+			return
+		}
+		w.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			w.mu.Lock()
 			w.running = false
+			w.mu.Unlock()
 			w.storage.AddLog("info", "워커가 중지되었습니다.", w.config.Exchange, w.config.Symbol)
 			return
 		case <-w.stopCh:
+			w.mu.Lock()
 			w.running = false
+			w.mu.Unlock()
 			w.storage.AddLog("info", "워커가 중지되었습니다.", w.config.Exchange, w.config.Symbol)
 			return
 		case <-ticker.C:
-			w.processRequest()
+			// 실행 상태 재확인 후 요청 처리
+			w.mu.RLock()
+			if w.running {
+				w.mu.RUnlock()
+				w.processRequest()
+			} else {
+				w.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커 중지
 func (w *Worker) Stop() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	
 	if w.running {
-		close(w.stopCh)
 		w.running = false
+		close(w.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (w *Worker) IsRunning() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.running
 }
 
 // processRequest 요청 처리
 func (w *Worker) processRequest() {
+	// 실행 상태 재확인
+	w.mu.RLock()
+	if !w.running {
+		w.mu.RUnlock()
+		return
+	}
+	w.mu.RUnlock()
+
 	currentTime := time.Now()
 
 	// 상태 업데이트
@@ -113,6 +152,14 @@ func (w *Worker) processRequest() {
 
 	// 설정된 가격으로 매도 주문 실행
 	orderResult := w.executeSellOrder(w.config.SellPrice)
+
+	// 실행 상태 재확인 (주문 처리 후)
+	w.mu.RLock()
+	if !w.running {
+		w.mu.RUnlock()
+		return
+	}
+	w.mu.RUnlock()
 
 	if orderResult.Success {
 		// 매도 주문 성공 로그

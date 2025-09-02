@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	ccxt "github.com/ccxt/ccxt/go/v4"
@@ -19,6 +20,7 @@ import (
 
 // CoinoneWorker 코인원 거래소 워커
 type CoinoneWorker struct {
+	mu        sync.RWMutex
 	config    *WorkerConfig
 	storage   *MemoryStorage
 	running   bool
@@ -61,7 +63,10 @@ func NewCoinoneWorker(config *WorkerConfig, storage *MemoryStorage) *CoinoneWork
 
 // Start 워커를 시작합니다
 func (cw *CoinoneWorker) Start(ctx context.Context) {
+	cw.mu.Lock()
 	cw.running = true
+	cw.mu.Unlock()
+	
 	cw.storage.AddLog("info", "코인원 워커가 시작되었습니다.", cw.config.Exchange, cw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -75,36 +80,70 @@ func (cw *CoinoneWorker) Start(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
+		// 실행 상태 확인
+		cw.mu.RLock()
+		if !cw.running {
+			cw.mu.RUnlock()
+			cw.storage.AddLog("info", "코인원 워커가 중지되었습니다.", cw.config.Exchange, cw.config.Symbol)
+			return
+		}
+		cw.mu.RUnlock()
+
 		select {
 		case <-ctx.Done():
+			cw.mu.Lock()
 			cw.running = false
+			cw.mu.Unlock()
 			cw.storage.AddLog("info", "코인원 워커가 중지되었습니다.", cw.config.Exchange, cw.config.Symbol)
 			return
 		case <-cw.stopCh:
+			cw.mu.Lock()
 			cw.running = false
+			cw.mu.Unlock()
 			cw.storage.AddLog("info", "코인원 워커가 중지되었습니다.", cw.config.Exchange, cw.config.Symbol)
 			return
 		case <-ticker.C:
-			cw.executeSellOrder()
+			// 실행 상태 재확인 후 요청 처리
+			cw.mu.RLock()
+			if cw.running {
+				cw.mu.RUnlock()
+				cw.executeSellOrder()
+			} else {
+				cw.mu.RUnlock()
+				return
+			}
 		}
 	}
 }
 
 // Stop 워커를 중지합니다
 func (cw *CoinoneWorker) Stop() {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	
 	if cw.running {
-		close(cw.stopCh)
 		cw.running = false
+		close(cw.stopCh)
 	}
 }
 
 // IsRunning 워커 실행 상태 확인
 func (cw *CoinoneWorker) IsRunning() bool {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
 	return cw.running
 }
 
 // executeSellOrder 코인원에서 매도 주문 실행
 func (cw *CoinoneWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	cw.mu.RLock()
+	if !cw.running {
+		cw.mu.RUnlock()
+		return
+	}
+	cw.mu.RUnlock()
+
 	// 심볼 변환 (BTC/KRW -> BTC)
 	coinoneSymbol := cw.convertToCoinoneSymbol(cw.config.Symbol)
 	cw.storage.AddLog("info", fmt.Sprintf("변환된 심볼: %s", coinoneSymbol), cw.config.Exchange, cw.config.Symbol)

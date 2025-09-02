@@ -12,11 +12,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // GateWorker Gate.io 거래소 워커 (APIv4 직접 구현)
 type GateWorker struct {
+	mu        sync.RWMutex
 	config  *WorkerConfig
 	storage *MemoryStorage
 	running bool
@@ -35,11 +37,15 @@ func NewGateWorker(config *WorkerConfig, storage *MemoryStorage) *GateWorker {
 
 // Start 워커를 시작합니다
 func (gw *GateWorker) Start(ctx context.Context) {
+	gw.mu.Lock()
 	if gw.running {
+		gw.mu.Unlock()
 		return
 	}
 
 	gw.running = true
+	gw.mu.Unlock()
+	
 	gw.storage.AddLog("info", "Gate.io APIv4 워커가 시작되었습니다.", gw.config.Exchange, gw.config.Symbol)
 
 	// 주기적으로 매도 주문 실행
@@ -48,10 +54,24 @@ func (gw *GateWorker) Start(ctx context.Context) {
 		defer ticker.Stop()
 
 		for {
+			// 실행 상태 확인
+			gw.mu.RLock()
+			if !gw.running {
+				gw.mu.RUnlock()
+				return
+			}
+			gw.mu.RUnlock()
+
 			select {
 			case <-ticker.C:
+				// 실행 상태 재확인 후 요청 처리
+				gw.mu.RLock()
 				if gw.running {
+					gw.mu.RUnlock()
 					gw.executeSellOrder()
+				} else {
+					gw.mu.RUnlock()
+					return
 				}
 			case <-gw.stopCh:
 				return
@@ -64,6 +84,9 @@ func (gw *GateWorker) Start(ctx context.Context) {
 
 // Stop 워커를 중지합니다
 func (gw *GateWorker) Stop() {
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	
 	if !gw.running {
 		return
 	}
@@ -75,11 +98,21 @@ func (gw *GateWorker) Stop() {
 
 // IsRunning 워커 실행 상태를 반환합니다
 func (gw *GateWorker) IsRunning() bool {
+	gw.mu.RLock()
+	defer gw.mu.RUnlock()
 	return gw.running
 }
 
 // executeSellOrder Gate.io APIv4로 매도 주문 실행
 func (gw *GateWorker) executeSellOrder() {
+	// 실행 상태 재확인
+	gw.mu.RLock()
+	if !gw.running {
+		gw.mu.RUnlock()
+		return
+	}
+	gw.mu.RUnlock()
+
 	if gw.config == nil {
 		gw.storage.AddLog("error", "Gate.io 설정이 nil입니다.", gw.config.Exchange, gw.config.Symbol)
 		return
