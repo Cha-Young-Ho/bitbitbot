@@ -15,19 +15,50 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             margin: 0;
-            padding: 20px;
+            padding: 0;
             min-height: 100vh;
             color: #333;
         }
 
         .container {
             max-width: 800px;
-            margin: 0 auto;
+            margin: 20px auto;
             background: white;
             border-radius: 15px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             overflow: hidden;
         }
+
+        .success-log-container {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            color: white;
+            margin-bottom: 20px;
+        }
+
+        .success-log-header {
+            color: white;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .success-log-content {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+        }
+
+        .success-log-item {
+            padding: 5px 0;
+            color: #10b981;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
 
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -226,6 +257,392 @@
             color: #64748b;
             font-size: 0.9rem;
         }
+
+        /* 탭 스타일 */
+        .tab-container {
+            background: white;
+            border-radius: 0;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .tab-header {
+            display: flex;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 18px 20px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            border-radius: 0;
+        }
+
+        .tab-button:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+            transform: translateY(-1px);
+        }
+
+        .tab-button.active {
+            background: rgba(255, 255, 255, 0.25);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: white;
+            border-radius: 2px 2px 0 0;
+        }
+
+        .tab-button:active {
+            transform: translateY(0);
+            transition: transform 0.1s ease;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 30px;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* 키 관리 스타일 */
+        .key-management-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .key-management-title {
+            font-size: 1.5rem;
+            color: #1e293b;
+            margin: 0;
+        }
+
+        .add-key-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .add-key-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .key-list {
+            display: grid;
+            gap: 20px;
+        }
+
+        .key-item {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .key-item:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.1);
+        }
+
+        .key-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .key-exchange {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .key-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .key-status.active {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .key-status.inactive {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .key-info {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .key-info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .key-info-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+
+        .key-info-value {
+            font-size: 0.9rem;
+            color: #1e293b;
+            font-family: 'Courier New', monospace;
+            word-break: break-all;
+        }
+
+        .key-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .key-action-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .key-action-button.edit {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .key-action-button.edit:hover {
+            background: #e5e7eb;
+        }
+
+        .key-action-button.delete {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .key-action-button.delete:hover {
+            background: #fecaca;
+        }
+
+        .key-action-button.toggle {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .key-action-button.toggle:hover {
+            background: #bfdbfe;
+        }
+
+        /* 모달 스타일 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            color: #1e293b;
+            margin: 0;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #64748b;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            color: #1e293b;
+        }
+
+        .modal-form {
+            display: grid;
+            gap: 20px;
+        }
+
+        .modal-form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-form-group label {
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .modal-form-group input,
+        .modal-form-group select {
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .modal-form-group input:focus,
+        .modal-form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: flex-end;
+            margin-top: 25px;
+        }
+
+        .modal-button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 100px;
+        }
+
+        .modal-button.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .modal-button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .modal-button.secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .modal-button.secondary:hover {
+            background: #e5e7eb;
+        }
+
+        /* 거래소 선택 스타일 */
+        .exchange-selection {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .exchange-selection h3 {
+            color: #1e293b;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .exchange-key-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .empty-state-title {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: #374151;
+        }
+
+        .empty-state-description {
+            font-size: 1rem;
+            margin-bottom: 25px;
+        }
     </style>
 </head>
 <body>
@@ -234,73 +651,82 @@
             <h1>BitBit</h1>
         </div>
 
-        <div class="content">
-            <!-- 설정 섹션 -->
-            <div class="config-section">
-                <h2>워커 설정</h2>
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="exchange">거래소</label>
-                        <select id="exchange">
-                            <option value="">거래소 선택</option>
-                            <option value="Upbit">Upbit</option>
-                            <option value="Bithumb">Bithumb</option>
-                            <option value="Binance">Binance</option>
-                            <option value="Bybit">Bybit</option>
-                            <option value="KuCoin">KuCoin</option>
-                            <option value="Coinbase">Coinbase</option>
-                            <option value="Huobi">Huobi</option>
-                            <option value="Mexc">Mexc</option>
-                            <option value="Bitget">Bitget</option>
-                            <option value="Coinone">Coinone</option>
-                            <option value="Korbit">Korbit</option>
-                            <option value="OKX">OKX</option>
-                            <option value="Gate">Gate</option>
-                        </select>
+        <!-- 탭 컨테이너 -->
+        <div class="tab-container">
+            <div class="tab-header">
+                <button class="tab-button active" onclick="switchTab('trading')">매도 거래</button>
+                <button class="tab-button" onclick="switchTab('keys')">키 관리</button>
+            </div>
+
+            <!-- 매도 거래 탭 -->
+            <div id="trading-tab" class="tab-content active">
+                <!-- 거래소 선택 섹션 -->
+                <div class="exchange-selection">
+                    <h3>거래소 선택</h3>
+                    <div class="exchange-key-selector">
+                        <div class="form-group">
+                            <label for="selectedExchangeKey">저장된 키 선택</label>
+                            <select id="selectedExchangeKey">
+                                <option value="">키를 먼저 추가해주세요</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="selectedSymbol">심볼</label>
+                            <input type="text" id="selectedSymbol" placeholder="예: TRX/USDT">
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="symbol">심볼</label>
-                        <input type="text" id="symbol" placeholder="예: TRX/USDT">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="selectedRequestInterval">요청 간격 (초)</label>
+                            <input type="number" id="selectedRequestInterval" placeholder="0.01" step="0.01" min="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label for="selectedSellAmount">매도 수량</label>
+                            <input type="number" id="selectedSellAmount" placeholder="0.1" step="0.1" min="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="selectedSellPrice">매도 가격</label>
+                            <input type="number" id="selectedSellPrice" placeholder="100.0" step="0.01" min="0.01">
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="accessKey">Access Key</label>
-                        <input type="text" id="accessKey" placeholder="Access Key 입력">
-                    </div>
-                    <div class="form-group">
-                        <label for="secretKey">Secret Key</label>
-                        <input type="text" id="secretKey" placeholder="Secret Key 입력">
-                    </div>
-                    <div class="form-group">
-                        <label for="passwordPhrase">Password Phrase</label>
-                        <input type="text" id="passwordPhrase" placeholder="Password Phrase (필요시)">
-                    </div>
-                    <div class="form-group">
-                        <label for="requestInterval">요청 간격 (초)</label>
-                        <input type="number" id="requestInterval" placeholder="0.01" step="0.01" min="0.01">
-                    </div>
-                    <div class="form-group">
-                        <label for="sellAmount">매도 수량</label>
-                        <input type="number" id="sellAmount" placeholder="0.1" step="0.1" min="0.1">
-                    </div>
-                    <div class="form-group">
-                        <label for="sellPrice">매도 가격</label>
-                        <input type="number" id="sellPrice" placeholder="100.0" step="0.01" min="0.01">
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="startWorkerWithKey()">시작</button>
+                        <button class="btn btn-danger" onclick="stopWorker()">정지</button>
                     </div>
                 </div>
-                <div class="button-group">
-                    <button class="btn btn-primary" onclick="startWorker()">시작</button>
-                    <button class="btn btn-danger" onclick="stopWorker()">정지</button>
+
+
+                <!-- 성공 로그 창 -->
+                <div class="success-log-container">
+                    <div class="success-log-header">
+                        성공한 거래 내역
+                    </div>
+                    <div class="success-log-content" id="successLogContent">
+                        <div class="success-log-item">성공한 거래가 없습니다.</div>
+                    </div>
+                </div>
+
+                <!-- 로그 섹션 -->
+                <div class="log-section">
+                    <h2>로그</h2>
+                    <div class="log-container" id="logContainer">
+                        <div class="log-entry">
+                            <span class="log-timestamp">[시스템]</span>
+                            <span class="log-level-info">애플리케이션이 시작되었습니다.</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 로그 섹션 -->
-            <div class="log-section">
-                <h2>로그</h2>
-                <div class="log-container" id="logContainer">
-                    <div class="log-entry">
-                        <span class="log-timestamp">[시스템]</span>
-                        <span class="log-level-info">애플리케이션이 시작되었습니다.</span>
-                    </div>
+            <!-- 키 관리 탭 -->
+            <div id="keys-tab" class="tab-content">
+                <div class="key-management-header">
+                    <h2 class="key-management-title">키 관리</h2>
+                    <button class="add-key-button" onclick="openAddKeyModal()">키 추가</button>
+                </div>
+
+                <div class="key-list" id="keyList">
+                    <!-- 키 목록이 여기에 동적으로 추가됩니다 -->
                 </div>
             </div>
         </div>
@@ -315,35 +741,109 @@
         </div>
     </div>
 
+    <!-- 키 추가/수정 모달 -->
+    <div id="keyModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">키 추가</h3>
+                <button class="modal-close" onclick="closeKeyModal()">&times;</button>
+            </div>
+            <form class="modal-form" id="keyForm">
+                <div class="modal-form-group">
+                    <label for="modalExchange">거래소</label>
+                    <select id="modalExchange" required>
+                        <option value="">거래소 선택</option>
+                        <option value="Upbit">Upbit</option>
+                        <option value="Bithumb">Bithumb</option>
+                        <option value="Binance">Binance</option>
+                        <option value="Bybit">Bybit</option>
+                        <option value="KuCoin">KuCoin</option>
+                        <option value="Coinbase">Coinbase</option>
+                        <option value="Huobi">Huobi</option>
+                        <option value="Mexc">Mexc</option>
+                        <option value="Bitget">Bitget</option>
+                        <option value="Coinone">Coinone</option>
+                        <option value="Korbit">Korbit</option>
+                        <option value="OKX">OKX</option>
+                        <option value="Gate">Gate</option>
+                    </select>
+                </div>
+                <div class="modal-form-group">
+                    <label for="modalAccessKey">Access Key</label>
+                    <input type="text" id="modalAccessKey" placeholder="Access Key 입력" required>
+                </div>
+                <div class="modal-form-group">
+                    <label for="modalSecretKey">Secret Key</label>
+                    <input type="text" id="modalSecretKey" placeholder="Secret Key 입력" required>
+                </div>
+                <div class="modal-form-group">
+                    <label for="modalPasswordPhrase">Password Phrase</label>
+                    <input type="text" id="modalPasswordPhrase" placeholder="Password Phrase (필요시)">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" onclick="closeKeyModal()">취소</button>
+                    <button type="submit" class="modal-button primary" id="modalSubmitButton">추가</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         // 전역 변수
         let isRunning = false;
         let logUpdateInterval;
+        let currentEditingKeyId = null;
+        let exchangeKeys = [];
 
         // 초기화
         document.addEventListener('DOMContentLoaded', function() {
-            loadWorkerConfig();
+            loadExchangeKeys();
             startLogUpdates();
             checkVersion();
+            setupKeyForm();
         });
 
-        // 워커 시작
-        async function startWorker() {
-            const config = getConfigFromForm();
-            if (!validateConfig(config)) {
+        // 탭 전환
+        function switchTab(tabName) {
+            // 모든 탭 버튼과 콘텐츠 비활성화
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // 선택된 탭 활성화
+            document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            
+            // 키 관리 탭으로 전환 시 키 목록 새로고침
+            if (tabName === 'keys') {
+                loadExchangeKeys();
+            }
+        }
+
+        // 저장된 키로 워커 시작
+        async function startWorkerWithKey() {
+            const keyId = document.getElementById('selectedExchangeKey').value;
+            const symbol = document.getElementById('selectedSymbol').value;
+            const requestInterval = document.getElementById('selectedRequestInterval').value;
+            const sellAmount = document.getElementById('selectedSellAmount').value;
+            const sellPrice = document.getElementById('selectedSellPrice').value;
+
+            if (!keyId) {
+                addLog('error', '거래소 키를 선택해주세요.');
+                return;
+            }
+
+            if (!symbol || !requestInterval || !sellAmount || !sellPrice) {
+                addLog('error', '모든 필드를 입력해주세요.');
                 return;
             }
 
             try {
-                const result = await window.go.main.App.SetWorkerConfig(
-                    config.exchange,
-                    config.accessKey,
-                    config.secretKey,
-                    config.passwordPhrase,
-                    config.requestInterval,
-                    config.symbol,
-                    config.sellAmount,
-                    config.sellPrice
+                const result = await window.go.main.App.StartWorkerWithKey(
+                    keyId,
+                    requestInterval,
+                    symbol,
+                    sellAmount,
+                    sellPrice
                 );
 
                 if (result.success) {
@@ -352,6 +852,9 @@
                         isRunning = true;
                         updateStatus();
                         addLog('success', '워커가 시작되었습니다.');
+                        
+                        // 로그 업데이트 재시작
+                        restartLogUpdates();
                     } else {
                         addLog('error', startResult.message);
                     }
@@ -371,6 +874,9 @@
                     isRunning = false;
                     updateStatus();
                     addLog('info', '워커가 중지되었습니다.');
+                    
+                    // 로그 업데이트 재시작 (정지 후에도 로그 계속 표시)
+                    restartLogUpdates();
                 } else {
                     addLog('error', result.message);
                 }
@@ -379,64 +885,205 @@
             }
         }
 
-        // 설정 폼에서 값 가져오기
-        function getConfigFromForm() {
-            return {
-                exchange: document.getElementById('exchange').value,
-                accessKey: document.getElementById('accessKey').value,
-                secretKey: document.getElementById('secretKey').value,
-                passwordPhrase: document.getElementById('passwordPhrase').value,
-                requestInterval: document.getElementById('requestInterval').value,
-                symbol: document.getElementById('symbol').value,
-                sellAmount: document.getElementById('sellAmount').value,
-                sellPrice: document.getElementById('sellPrice').value
-            };
-        }
 
-        // 설정 검증
-        function validateConfig(config) {
-            if (!config.exchange) {
-                addLog('error', '거래소를 선택해주세요.');
-                return false;
-            }
-            if (!config.accessKey || !config.secretKey) {
-                addLog('error', 'Access Key와 Secret Key를 입력해주세요.');
-                return false;
-            }
-            if (!config.requestInterval || parseFloat(config.requestInterval) <= 0) {
-                addLog('error', '요청 간격을 올바르게 입력해주세요.');
-                return false;
-            }
-            if (!config.symbol) {
-                addLog('error', '심볼을 입력해주세요.');
-                return false;
-            }
-            if (!config.sellAmount || parseFloat(config.sellAmount) <= 0) {
-                addLog('error', '매도 수량을 올바르게 입력해주세요.');
-                return false;
-            }
-            if (!config.sellPrice || parseFloat(config.sellPrice) <= 0) {
-                addLog('error', '매도 가격을 올바르게 입력해주세요.');
-                return false;
-            }
-            return true;
-        }
-
-        // 설정 로드
-        async function loadWorkerConfig() {
+        // 거래소 키 목록 로드
+        async function loadExchangeKeys() {
             try {
-                const result = await window.go.main.App.GetWorkerConfig();
-                if (result.success && result.config) {
-                    const config = result.config;
-                    document.getElementById('exchange').value = config.exchange || '';
-                    document.getElementById('accessKey').value = config.accessKey || '';
-                    document.getElementById('secretKey').value = config.secretKey || '';
-                    document.getElementById('requestInterval').value = config.requestInterval || '';
-                    document.getElementById('symbol').value = config.symbol || '';
+                const result = await window.go.main.App.GetExchangeKeys();
+                if (result.success) {
+                    exchangeKeys = result.keys || [];
+                    updateKeyList();
+                    updateExchangeKeySelector();
+                } else {
+                    addLog('error', '키 목록 로드 실패: ' + result.message);
                 }
             } catch (error) {
-                addLog('error', '설정 로드 실패: ' + error.message);
+                addLog('error', '키 목록 로드 실패: ' + error.message);
             }
+        }
+
+        // 키 목록 업데이트
+        function updateKeyList() {
+            const keyList = document.getElementById('keyList');
+            
+            if (exchangeKeys.length === 0) {
+                keyList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔑</div>
+                        <div class="empty-state-title">등록된 키가 없습니다</div>
+                        <div class="empty-state-description">키 추가 버튼을 클릭하여 거래소 키를 등록해주세요.</div>
+                    </div>
+                `;
+                return;
+            }
+
+            keyList.innerHTML = exchangeKeys.map(key => `
+                <div class="key-item">
+                    <div class="key-item-header">
+                        <div class="key-exchange">${key.exchange}</div>
+                        <div class="key-status ${key.isActive ? 'active' : 'inactive'}">
+                            ${key.isActive ? '활성' : '비활성'}
+                        </div>
+                    </div>
+                    <div class="key-info">
+                        <div class="key-info-item">
+                            <div class="key-info-label">Access Key</div>
+                            <div class="key-info-value">${key.accessKey}</div>
+                        </div>
+                        <div class="key-info-item">
+                            <div class="key-info-label">Secret Key</div>
+                            <div class="key-info-value">${key.secretKey}</div>
+                        </div>
+                        <div class="key-info-item">
+                            <div class="key-info-label">Password Phrase</div>
+                            <div class="key-info-value">${key.passwordPhrase || '없음'}</div>
+                        </div>
+                        <div class="key-info-item">
+                            <div class="key-info-label">생성일</div>
+                            <div class="key-info-value">${new Date(key.createdAt).toLocaleDateString()}</div>
+                        </div>
+                    </div>
+                    <div class="key-actions">
+                        <button class="key-action-button edit" onclick="editKey('${key.id}')">수정</button>
+                        <button class="key-action-button toggle" onclick="toggleKey('${key.id}', ${!key.isActive})">
+                            ${key.isActive ? '비활성화' : '활성화'}
+                        </button>
+                        <button class="key-action-button delete" onclick="deleteKey('${key.id}')">삭제</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 거래소 키 선택자 업데이트
+        function updateExchangeKeySelector() {
+            const selector = document.getElementById('selectedExchangeKey');
+            const activeKeys = exchangeKeys.filter(key => key.isActive);
+            
+            if (activeKeys.length === 0) {
+                selector.innerHTML = '<option value="">키를 먼저 추가해주세요</option>';
+                return;
+            }
+
+            selector.innerHTML = activeKeys.map(key => 
+                `<option value="${key.id}">${key.exchange}</option>`
+            ).join('');
+        }
+
+        // 키 추가 모달 열기
+        function openAddKeyModal() {
+            currentEditingKeyId = null;
+            document.getElementById('modalTitle').textContent = '키 추가';
+            document.getElementById('modalSubmitButton').textContent = '추가';
+            document.getElementById('keyForm').reset();
+            document.getElementById('keyModal').classList.add('active');
+        }
+
+        // 키 수정 모달 열기
+        async function editKey(keyId) {
+            try {
+                const result = await window.go.main.App.GetExchangeKey(keyId);
+                if (result.success) {
+                    const key = result.key;
+                    currentEditingKeyId = keyId;
+                    
+                    document.getElementById('modalTitle').textContent = '키 수정';
+                    document.getElementById('modalSubmitButton').textContent = '수정';
+                    document.getElementById('modalExchange').value = key.exchange;
+                    document.getElementById('modalAccessKey').value = key.accessKey;
+                    document.getElementById('modalSecretKey').value = key.secretKey;
+                    document.getElementById('modalPasswordPhrase').value = key.passwordPhrase || '';
+                    
+                    document.getElementById('keyModal').classList.add('active');
+                } else {
+                    addLog('error', '키 정보 로드 실패: ' + result.message);
+                }
+            } catch (error) {
+                addLog('error', '키 정보 로드 실패: ' + error.message);
+            }
+        }
+
+        // 키 모달 닫기
+        function closeKeyModal() {
+            document.getElementById('keyModal').classList.remove('active');
+            currentEditingKeyId = null;
+        }
+
+        // 모달 외부 클릭 시 닫기
+        document.getElementById('keyModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeKeyModal();
+            }
+        });
+
+        // 키 활성/비활성 토글
+        async function toggleKey(keyId, isActive) {
+            try {
+                const result = await window.go.main.App.SetExchangeKeyActive(keyId, isActive);
+                if (result.success) {
+                    addLog('success', result.message);
+                    loadExchangeKeys();
+                } else {
+                    addLog('error', result.message);
+                }
+            } catch (error) {
+                addLog('error', '키 상태 변경 실패: ' + error.message);
+            }
+        }
+
+        // 키 삭제
+        async function deleteKey(keyId) {
+            if (!confirm('정말로 이 키를 삭제하시겠습니까?')) {
+                return;
+            }
+
+            try {
+                const result = await window.go.main.App.DeleteExchangeKey(keyId);
+                if (result.success) {
+                    addLog('success', result.message);
+                    loadExchangeKeys();
+                } else {
+                    addLog('error', result.message);
+                }
+            } catch (error) {
+                addLog('error', '키 삭제 실패: ' + error.message);
+            }
+        }
+
+        // 키 폼 설정
+        function setupKeyForm() {
+            document.getElementById('keyForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const exchange = document.getElementById('modalExchange').value;
+                const accessKey = document.getElementById('modalAccessKey').value;
+                const secretKey = document.getElementById('modalSecretKey').value;
+                const passwordPhrase = document.getElementById('modalPasswordPhrase').value;
+
+                try {
+                    let result;
+                    if (currentEditingKeyId) {
+                        // 키 수정
+                        result = await window.go.main.App.UpdateExchangeKey(
+                            currentEditingKeyId, exchange, accessKey, secretKey, passwordPhrase
+                        );
+                    } else {
+                        // 키 추가
+                        result = await window.go.main.App.AddExchangeKey(
+                            exchange, accessKey, secretKey, passwordPhrase
+                        );
+                    }
+
+                    if (result.success) {
+                        addLog('success', result.message);
+                        closeKeyModal();
+                        loadExchangeKeys();
+                    } else {
+                        addLog('error', result.message);
+                    }
+                } catch (error) {
+                    addLog('error', '키 저장 실패: ' + error.message);
+                }
+            });
         }
 
         // 상태 업데이트
@@ -474,19 +1121,30 @@
         function startLogUpdates() {
             logUpdateInterval = setInterval(async () => {
                 try {
-                    const result = await window.go.main.App.GetLogs(50);
+                    const result = await window.go.main.App.GetLogs(100);
                     if (result.success && result.logs) {
                         updateLogDisplay(result.logs);
                     }
                 } catch (error) {
                     console.error('로그 업데이트 실패:', error);
                 }
-            }, 1000); // 1초마다 업데이트
+            }, 100); // 0.1초마다 업데이트 (매도 주문 간격과 동일)
+        }
+
+        // 로그 업데이트 재시작
+        function restartLogUpdates() {
+            if (logUpdateInterval) {
+                clearInterval(logUpdateInterval);
+            }
+            startLogUpdates();
         }
 
         // 로그 표시 업데이트
         function updateLogDisplay(logs) {
             const logContainer = document.getElementById('logContainer');
+            const successLogContainer = document.getElementById('successLogContent');
+            
+            // 디버깅 로그 제거
             
             // 기존 로그와 비교하여 새로운 로그만 추가
             const existingLogs = logContainer.children.length;
@@ -504,6 +1162,22 @@
                     `;
                     
                     logContainer.appendChild(logEntry);
+                    
+                    // 성공 로그인 경우 상단 성공 로그 창에도 추가
+                    if (log.level === 'success') {
+                        const successLogEntry = document.createElement('div');
+                        successLogEntry.className = 'success-log-item';
+                        successLogEntry.innerHTML = `[${timestamp}] ${log.message}`;
+                        
+                        // 기존 "성공한 거래가 없습니다" 메시지 제거
+                        const firstItem = successLogContainer.querySelector('.success-log-item');
+                        if (firstItem && firstItem.textContent.includes('성공한 거래가 없습니다')) {
+                            firstItem.remove();
+                        }
+                        
+                        successLogContainer.appendChild(successLogEntry);
+                        successLogContainer.scrollTop = successLogContainer.scrollHeight;
+                    }
                 }
                 logContainer.scrollTop = logContainer.scrollHeight;
             }
@@ -521,6 +1195,7 @@
                 console.error('버전 체크 실패:', error);
             }
         }
+
     </script>
 </body>
 </html>

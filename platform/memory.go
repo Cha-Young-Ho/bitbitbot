@@ -12,6 +12,8 @@ type Config struct {
 	MainVer      string   `json:"mainVer"`      // 선택적 업데이트 버전
 	MinVer       string   `json:"minVer"`       // 필수 업데이트 버전
 	ForceUpdate  bool     `json:"forceUpdate"`  // 강제 업데이트 여부
+	MacURL       string   `json:"macUrl"`       // Mac 다운로드 URL
+	WinURL       string   `json:"winUrl"`       // Windows 다운로드 URL
 }
 
 // MemoryStorage 메모리 기반 저장소

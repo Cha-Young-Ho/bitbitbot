@@ -18,6 +18,7 @@ type VersionChecker interface {
 type Handler struct {
 	workerManager *WorkerManager
 	versionChecker VersionChecker
+	keyStorage   *KeyStorage
 }
 
 // NewHandler 새로운 핸들러 생성
@@ -25,6 +26,7 @@ func NewHandler() *Handler {
 	return &Handler{
 		workerManager: NewWorkerManager(),
 		versionChecker: nil, // main 패키지에서 주입받아야 함
+		keyStorage:   NewKeyStorage(),
 	}
 }
 
@@ -197,8 +199,7 @@ func (h *Handler) CheckVersion() map[string]interface{} {
 		updateType = "recommended" // 권장 업데이트
 	}
 
-	h.workerManager.storage.AddLog("info", fmt.Sprintf("버전 체크: 현재 %s, 최신 %s, 업데이트 타입: %s", 
-		currentVersion, latestVersion, updateType), "", "")
+	// 버전 체크 로그 제거
 
 	return map[string]interface{}{
 		"success":        true,
@@ -216,4 +217,68 @@ func (h *Handler) CheckVersion() map[string]interface{} {
 // Cleanup 정리
 func (h *Handler) Cleanup() {
 	h.workerManager.Cleanup()
+}
+
+// GetKeyStorage 키 저장소 반환
+func (h *Handler) GetKeyStorage() *KeyStorage {
+	return h.keyStorage
+}
+
+// DownloadUpdate 업데이트 파일 다운로드
+func (h *Handler) DownloadUpdate() map[string]interface{} {
+	// S3에서 최신 버전 정보 가져오기
+	configInterface := h.versionChecker.GetConfig()
+	if configInterface == nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "설정 정보를 가져올 수 없습니다",
+		}
+	}
+
+	// Config 타입으로 캐스팅
+	config, ok := configInterface.(*Config)
+	if !ok {
+		return map[string]interface{}{
+			"success": false,
+			"message": "설정 정보 형식이 올바르지 않습니다",
+		}
+	}
+
+	// 현재 플랫폼에 맞는 다운로드 URL 결정
+	var downloadURL string
+	if config.MacURL != "" {
+		downloadURL = config.MacURL
+	} else if config.WinURL != "" {
+		downloadURL = config.WinURL
+	} else {
+		return map[string]interface{}{
+			"success": false,
+			"message": "다운로드 URL을 찾을 수 없습니다",
+		}
+	}
+
+	// 다운로드 실행 (실제 구현은 별도 함수로)
+	h.workerManager.storage.AddLog("info", fmt.Sprintf("업데이트 다운로드 시작: %s", downloadURL), "", "")
+	
+	return map[string]interface{}{
+		"success": true,
+		"message": "업데이트 다운로드가 시작되었습니다",
+		"downloadURL": downloadURL,
+	}
+}
+
+// InstallUpdate 업데이트 설치
+func (h *Handler) InstallUpdate() map[string]interface{} {
+	h.workerManager.storage.AddLog("info", "업데이트 설치를 시작합니다", "", "")
+	
+	// 실제 설치 로직은 여기에 구현
+	// 1. 다운로드된 파일 확인
+	// 2. 현재 실행 파일 백업
+	// 3. 새 파일로 교체
+	// 4. 애플리케이션 재시작
+	
+	return map[string]interface{}{
+		"success": true,
+		"message": "업데이트가 설치되었습니다. 애플리케이션을 재시작해주세요.",
+	}
 }

@@ -69,11 +69,19 @@ jobs:
           echo "Patch version change detected. Updating mainVer to $NEW_MAIN_VER, keeping minVer as $NEW_MIN_VER"
         fi
         
-        # Update config.json
-        jq --arg mainVer "$NEW_MAIN_VER" --arg minVer "$NEW_MIN_VER" \
-          '.mainVer = $mainVer | .minVer = $minVer' ./current-config.json > ./updated-config.json
+        # Create download URLs
+        MAC_URL="https://${{ secrets.BUCKET_NAME }}.s3.ap-northeast-2.amazonaws.com/releases/bitbit-app-mac-${{ steps.version.outputs.version }}.zip"
+        WIN_URL="https://${{ secrets.BUCKET_NAME }}.s3.ap-northeast-2.amazonaws.com/releases/bitbit-app-windows-${{ steps.version.outputs.version }}.zip"
+        
+        # Update config.json with new URLs
+        jq --arg mainVer "$NEW_MAIN_VER" --arg minVer "$NEW_MIN_VER" --arg macUrl "$MAC_URL" --arg winUrl "$WIN_URL" \
+          '.mainVer = $mainVer | .minVer = $minVer | .macUrl = $macUrl | .winUrl = $winUrl' ./current-config.json > ./updated-config.json
         
         # Upload updated config.json
         aws s3 cp ./updated-config.json s3://${{ secrets.BUCKET_NAME }}/prod/config.json
         
-        echo "Updated config.json uploaded: mainVer=$NEW_MAIN_VER, minVer=$NEW_MIN_VER"
+        echo "Updated config.json uploaded:"
+        echo "  mainVer=$NEW_MAIN_VER"
+        echo "  minVer=$NEW_MIN_VER"
+        echo "  macUrl=$MAC_URL"
+        echo "  winUrl=$WIN_URL"

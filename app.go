@@ -53,8 +53,9 @@ func (a *AppVersionChecker) GetCurrentVersion() string {
 
 // App 간단한 애플리케이션
 type App struct {
-	handler *platform.Handler
-	ctx     context.Context
+	handler    *platform.Handler
+	keyStorage *platform.KeyStorage
+	ctx        context.Context
 }
 
 // NewApp 새로운 애플리케이션 생성
@@ -65,6 +66,9 @@ func NewApp() *App {
 	
 	// VersionChecker 설정
 	app.handler.SetVersionChecker(&AppVersionChecker{})
+	
+	// 키 저장소 설정
+	app.keyStorage = app.handler.GetKeyStorage()
 	
 	return app
 }
@@ -109,10 +113,194 @@ func (a *App) CheckVersion() map[string]interface{} {
 	return a.handler.CheckVersion()
 }
 
+// DownloadUpdate 업데이트 파일 다운로드
+func (a *App) DownloadUpdate() map[string]interface{} {
+	return a.handler.DownloadUpdate()
+}
+
+// InstallUpdate 업데이트 설치
+func (a *App) InstallUpdate() map[string]interface{} {
+	return a.handler.InstallUpdate()
+}
+
+// AddExchangeKey 거래소 키 추가
+func (a *App) AddExchangeKey(exchange, accessKey, secretKey, passwordPhrase string) map[string]interface{} {
+	key, err := a.keyStorage.AddKey(exchange, accessKey, secretKey, passwordPhrase)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	
+	return map[string]interface{}{
+		"success": true,
+		"message": "키가 성공적으로 추가되었습니다.",
+		"key":     key,
+	}
+}
+
+// UpdateExchangeKey 거래소 키 수정
+func (a *App) UpdateExchangeKey(keyID, exchange, accessKey, secretKey, passwordPhrase string) map[string]interface{} {
+	key, err := a.keyStorage.UpdateKey(keyID, exchange, accessKey, secretKey, passwordPhrase)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	
+	return map[string]interface{}{
+		"success": true,
+		"message": "키가 성공적으로 수정되었습니다.",
+		"key":     key,
+	}
+}
+
+// DeleteExchangeKey 거래소 키 삭제
+func (a *App) DeleteExchangeKey(keyID string) map[string]interface{} {
+	err := a.keyStorage.DeleteKey(keyID)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	
+	return map[string]interface{}{
+		"success": true,
+		"message": "키가 성공적으로 삭제되었습니다.",
+	}
+}
+
+// GetExchangeKeys 모든 거래소 키 조회
+func (a *App) GetExchangeKeys() map[string]interface{} {
+	keys := a.keyStorage.GetAllKeys()
+	
+	return map[string]interface{}{
+		"success": true,
+		"keys":    keys,
+		"count":   len(keys),
+	}
+}
+
+// GetExchangeKeysByExchange 거래소별 키 조회
+func (a *App) GetExchangeKeysByExchange(exchange string) map[string]interface{} {
+	keys := a.keyStorage.GetKeysByExchange(exchange)
+	
+	return map[string]interface{}{
+		"success": true,
+		"keys":    keys,
+		"count":   len(keys),
+	}
+}
+
+// GetActiveExchangeKeys 활성 키만 조회
+func (a *App) GetActiveExchangeKeys() map[string]interface{} {
+	keys := a.keyStorage.GetActiveKeys()
+	
+	return map[string]interface{}{
+		"success": true,
+		"keys":    keys,
+		"count":   len(keys),
+	}
+}
+
+// SetExchangeKeyActive 키 활성/비활성 상태 변경
+func (a *App) SetExchangeKeyActive(keyID string, isActive bool) map[string]interface{} {
+	err := a.keyStorage.SetKeyActive(keyID, isActive)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	
+	status := "비활성화"
+	if isActive {
+		status = "활성화"
+	}
+	
+	return map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("키가 %s되었습니다.", status),
+	}
+}
+
+// GetExchangeKey 키 상세 조회
+func (a *App) GetExchangeKey(keyID string) map[string]interface{} {
+	key, err := a.keyStorage.GetKey(keyID)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		}
+	}
+	
+	return map[string]interface{}{
+		"success": true,
+		"key":     key,
+	}
+}
+
+// GetSupportedExchanges 지원되는 거래소 목록
+func (a *App) GetSupportedExchanges() map[string]interface{} {
+	exchanges := []string{
+		"Upbit", "Bithumb", "Binance", "Bybit", "KuCoin", 
+		"Coinbase", "Huobi", "Mexc", "Bitget", "Coinone", 
+		"Korbit", "OKX", "Gate",
+	}
+	
+	return map[string]interface{}{
+		"success":    true,
+		"exchanges":  exchanges,
+		"count":      len(exchanges),
+	}
+}
+
+// StartWorkerWithKey 저장된 키로 워커 시작
+func (a *App) StartWorkerWithKey(keyID, requestInterval, symbol, sellAmount, sellPrice string) map[string]interface{} {
+	// 키 조회
+	key, err := a.keyStorage.GetKey(keyID)
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": "키를 찾을 수 없습니다: " + err.Error(),
+		}
+	}
+	
+	// 키가 비활성 상태인지 확인
+	if !key.IsActive {
+		return map[string]interface{}{
+			"success": false,
+			"message": "비활성화된 키입니다.",
+		}
+	}
+	
+	// 워커 설정
+	return a.handler.SetWorkerConfig(
+		key.Exchange,
+		key.AccessKey,
+		key.SecretKey,
+		key.PasswordPhrase,
+		requestInterval,
+		symbol,
+		sellAmount,
+		sellPrice,
+	)
+}
+
+// GetConfigInfo 설정 디렉토리 정보 조회
+func (a *App) GetConfigInfo() map[string]interface{} {
+	configInfo := a.keyStorage.GetConfigInfo()
+	configInfo["success"] = true
+	return configInfo
+}
+
 // OnStartup 애플리케이션 시작 시 호출
 func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
-	log.Println("애플리케이션이 시작되었습니다.")
+	// 시스템 시작 로그 제거
 
 	// 초기 버전 체크 및 상태 확인
 	go a.initialVersionCheck()
