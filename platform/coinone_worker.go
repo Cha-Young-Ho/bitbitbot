@@ -113,7 +113,7 @@ func (cw *CoinoneWorker) executeSellOrder() {
 		coinoneSymbol, cw.order.Quantity, cw.order.Price), "info")
 
 	// Coinone API 직접 호출
-	orderID, err := cw.createCoinoneOrder(coinoneSymbol)
+	_, err := cw.createCoinoneOrder(coinoneSymbol)
 	if err != nil {
 		cw.mu.Lock()
 		cw.status.ErrorCount++
@@ -126,9 +126,8 @@ func (cw *CoinoneWorker) executeSellOrder() {
 		return
 	}
 
-	// 성공 로그
-	cw.sendLog(fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		cw.order.Price, cw.order.Quantity, orderID), "success", cw.order.Price, cw.order.Quantity)
+	// 성공 시 간단한 로그만 출력
+	cw.sendLog("주문 성공", "success", cw.order.Price, cw.order.Quantity)
 }
 
 // createCoinoneOrder Coinone API를 직접 호출하여 주문 생성

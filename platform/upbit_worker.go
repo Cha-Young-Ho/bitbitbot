@@ -141,6 +141,10 @@ func (uw *UpbitWorker) executeSellOrder(price float64) {
 		uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", fmt.Sprintf("응답 파싱 실패 (status=%d)", resp.StatusCode), "error", "", uw.order.Name, err.Error())
 		return
 	}
+
+	// 응답을 콘솔에 출력 (로그 포맷터 사용)
+	uw.printExchangeResponse("Upbit", resp.StatusCode, respBody)
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// 실패 사유를 시스템 로그에 남김
 		errMsg := fmt.Sprintf("주문 실패 (status=%d): %v", resp.StatusCode, respBody)
@@ -151,10 +155,36 @@ func (uw *UpbitWorker) executeSellOrder(price float64) {
 		return
 	}
 
-	// 성공 시 응답 내용 로그
-	successMsg := fmt.Sprintf("주문 성공 (status=%d): %v", resp.StatusCode, respBody)
-	uw.manager.SendSystemLog("UpbitWorker", "executeSellOrder", successMsg, "info", "", uw.order.Name, "")
-	uw.sendLog("Upbit 지정가 매도 주문이 접수되었습니다", "success")
+	// 성공 시 간단한 로그만 출력
+	uw.sendLog("주문 성공", "success")
+}
+
+// printExchangeResponse 거래소 응답을 콘솔에 출력
+func (uw *UpbitWorker) printExchangeResponse(exchangeName string, statusCode int, parsedResult map[string]interface{}) {
+	fmt.Printf("\n=== %s API 응답 ===\n", exchangeName)
+	fmt.Printf("상태 코드: %d\n", statusCode)
+	fmt.Printf("파싱된 결과: %+v\n", parsedResult)
+	fmt.Printf("=== %s 응답 끝 ===\n\n", exchangeName)
+}
+
+// formatLogMessage 로그 메시지 포맷팅
+func (uw *UpbitWorker) formatLogMessage(messageType, message string, price, quantity float64) string {
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	
+	switch messageType {
+	case "order":
+		return fmt.Sprintf("[%s] %s | 가격: %.8f | 수량: %.8f", timestamp, message, price, quantity)
+	case "success":
+		return fmt.Sprintf("[%s] ✅ %s | 가격: %.8f | 수량: %.8f", timestamp, message, price, quantity)
+	case "error":
+		return fmt.Sprintf("[%s] ❌ %s | 가격: %.8f | 수량: %.8f", timestamp, message, price, quantity)
+	case "info":
+		return fmt.Sprintf("[%s] ℹ️ %s", timestamp, message)
+	case "warning":
+		return fmt.Sprintf("[%s] ⚠️ %s", timestamp, message)
+	default:
+		return fmt.Sprintf("[%s] %s", timestamp, message)
+	}
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다

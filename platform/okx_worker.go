@@ -112,7 +112,7 @@ func (ow *OKXWorker) executeSellOrder() {
 		okxSymbol, ow.order.Quantity, ow.order.Price), "info")
 
 	// CCXT를 사용한 지정가 매도 주문
-	orderID, err := ow.exchange.CreateLimitSellOrder(
+	_, err := ow.exchange.CreateLimitSellOrder(
 		okxSymbol,         // 심볼 (예: BTC-USDT)
 		ow.order.Quantity, // 수량
 		ow.order.Price,    // 가격
@@ -129,10 +129,8 @@ func (ow *OKXWorker) executeSellOrder() {
 		return
 	}
 
-	// 성공 로그
-	ow.sendLog(fmt.Sprintf("매도 주문 성공 - 주문ID: %s, 심볼: %s, 수량: %.8f, 가격: %.2f",
-		orderID, okxSymbol, ow.order.Quantity, ow.order.Price), "order", ow.order.Price, ow.order.Quantity)
-	// OKX 매도 주문 성공 로그 제거
+	// 성공 시 간단한 로그만 출력
+	ow.sendLog("주문 성공", "success", ow.order.Price, ow.order.Quantity)
 
 	// 워커 중지 (주문 완료)
 	ow.Stop()

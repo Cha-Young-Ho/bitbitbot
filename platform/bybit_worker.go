@@ -3,6 +3,7 @@ package platform
 import (
 	"bitbit-app/local_file"
 	"context"
+	"encoding/json" // Added for json.Unmarshal
 	"fmt"
 	"strings"
 	"time"
@@ -107,12 +108,8 @@ func (bw *BybitWorker) executeSellOrder() {
 	// Bybit 심볼 형식으로 변환 (예: BTC/USDT -> BTC/USDT)
 	bybitSymbol := bw.convertToBybitSymbol(bw.order.Symbol)
 
-	// 디버깅을 위한 로그 추가
-	bw.sendLog(fmt.Sprintf("주문 시도 - 심볼: %s, 수량: %.8f, 가격: %.2f",
-		bybitSymbol, bw.order.Quantity, bw.order.Price), "info")
-
 	// CCXT를 사용한 지정가 매도 주문
-	orderID, err := bw.exchange.CreateLimitSellOrder(
+	_, err := bw.exchange.CreateLimitSellOrder(
 		bybitSymbol,       // 심볼 (예: BTC/USDT)
 		bw.order.Quantity, // 수량
 		bw.order.Price,    // 가격
@@ -124,15 +121,66 @@ func (bw *BybitWorker) executeSellOrder() {
 		bw.status.LastError = err.Error()
 		bw.mu.Unlock()
 
-		bw.sendLog(fmt.Sprintf("매도 주문 실패: %v", err), "error")
+		// CCXT 에러 응답을 파싱하여 retMsg만 추출
+		errorMessage := bw.parseCCXTError(err.Error())
+		
+		// 일관된 로그 포맷으로 에러 출력 (retMsg만 표시)
+		bw.sendLog(fmt.Sprintf("주문 실패\n이유: %s\n심볼: %s\n가격: %.8f", 
+			errorMessage, bw.order.Symbol, bw.order.Price), "error", bw.order.Price, bw.order.Quantity)
+		
 		bw.manager.SendSystemLog("BybitWorker", "executeSellOrder",
 			fmt.Sprintf("매도 주문 실패: %v", err), "error", "", bw.order.Name, err.Error())
 		return
 	}
 
-	// 성공 로그
-	bw.sendLog(fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		bw.order.Price, bw.order.Quantity, orderID), "success", bw.order.Price, bw.order.Quantity)
+	// 성공 시 간단한 로그만 출력
+	bw.sendLog("주문 성공", "success", bw.order.Price, bw.order.Quantity)
+}
+
+// parseCCXTError CCXT 에러 응답을 파싱하여 retMsg만 추출
+func (bw *BybitWorker) parseCCXTError(errorStr string) string {
+	// CCXT 에러 응답이 JSON 형태인지 확인
+	if strings.Contains(errorStr, "{") && strings.Contains(errorStr, "}") {
+		// JSON 파싱 시도
+		var errorResponse map[string]interface{}
+		if err := json.Unmarshal([]byte(errorStr), &errorResponse); err == nil {
+			// retMsg가 있으면 사용 (Bybit 특화)
+			if retMsg, ok := errorResponse["retMsg"].(string); ok && retMsg != "" {
+				return retMsg
+			}
+			// message가 있으면 사용
+			if message, ok := errorResponse["message"].(string); ok && message != "" {
+				return message
+			}
+			// error가 있으면 사용
+			if errorMsg, ok := errorResponse["error"].(string); ok && errorMsg != "" {
+				return errorMsg
+			}
+		}
+	}
+	
+	// JSON 파싱이 실패하거나 구조가 다른 경우 원본 에러 메시지 반환
+	return errorStr
+}
+
+// formatLogMessage 로그 메시지 포맷팅
+func (bw *BybitWorker) formatLogMessage(messageType, message string, price, quantity float64) string {
+	timestamp := time.Now().Format("15:04:05")
+	
+	switch messageType {
+	case "order":
+		return fmt.Sprintf("[%s] %s | 가격: %.8f | 수량: %.8f", timestamp, message, price, quantity)
+	case "success":
+		return fmt.Sprintf("[%s] %s", timestamp, message)
+	case "error":
+		return fmt.Sprintf("[%s] %s", timestamp, message)
+	case "info":
+		return fmt.Sprintf("[%s] %s", timestamp, message)
+	case "warning":
+		return fmt.Sprintf("[%s] %s", timestamp, message)
+	default:
+		return fmt.Sprintf("[%s] %s", timestamp, message)
+	}
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
@@ -154,8 +202,6 @@ func (bw *BybitWorker) convertToBybitSymbol(symbol string) string {
 
 	// Bybit 마켓 형식으로 변환
 	bybitSymbol := base + "/" + quote // "BTC/USDT"
-
-	bw.sendLog(fmt.Sprintf("심볼 변환: %s -> %s", symbol, bybitSymbol), "info")
 
 	return bybitSymbol
 }

@@ -257,9 +257,15 @@ func (workerManager *WorkerManager) SendLog(workerLog WorkerLog) {
 		workerLog.Message = cleanErrorMessage(workerLog.Message)
 	}
 
-	// 로그 포맷 통일: [플랫폼] 주문명 - 메시지
+	// 프론트엔드용 일관된 로그 포맷 생성
+	formattedMessage := workerManager.formatLogForFrontend(workerLog)
+	
+	// 콘솔용 로그 포맷: [플랫폼] 주문명 - 메시지
 	logMessage := fmt.Sprintf("[%s] %s - %s", workerLog.Platform, workerLog.OrderName, workerLog.Message)
 	log.Printf(logMessage)
+
+	// 프론트엔드로 전달할 로그에 포맷된 메시지 적용
+	workerLog.Message = formattedMessage
 
 	select {
 	case workerManager.logChan <- workerLog:
@@ -273,6 +279,43 @@ func (workerManager *WorkerManager) SendLog(workerLog WorkerLog) {
 	workerManager.emitOutbound(workerLog.UserID, OutboundEnvelope{Category: "orderLog", Data: workerLog})
 	// 시스템 로그에도 워커 로그 전송(통합 포맷)
 	workerManager.SendSystemLog("Worker", "SendLog", workerLog.Message, workerLog.LogType, workerLog.UserID, workerLog.OrderName, "")
+}
+
+// formatLogForFrontend 프론트엔드용 일관된 로그 포맷을 생성합니다
+func (workerManager *WorkerManager) formatLogForFrontend(workerLog WorkerLog) string {
+	timestamp := workerLog.Timestamp.Format("15:04:05")
+	
+	switch workerLog.LogType {
+	case "success":
+		// 성공 로그: [시간] 주문 성공\n심볼: ~\n가격: ~\n개수: ~\n주문ID: ~
+		if strings.Contains(workerLog.Message, "주문 성공") {
+			return fmt.Sprintf("[%s] %s", timestamp, workerLog.Message)
+		}
+		return fmt.Sprintf("[%s] %s", timestamp, workerLog.Message)
+		
+	case "error":
+		// 에러 로그: [시간] 주문 실패\n이유: ~\n심볼: ~\n가격: ~
+		if strings.Contains(workerLog.Message, "주문 실패") {
+			return fmt.Sprintf("[%s] %s", timestamp, workerLog.Message)
+		}
+		return fmt.Sprintf("[%s] %s", timestamp, workerLog.Message)
+		
+	case "order":
+		// 주문 로그: [시간] 메시지 | 가격: ~ | 수량: ~
+		return fmt.Sprintf("[%s] %s | 가격: %.8f | 수량: %.8f", timestamp, workerLog.Message, workerLog.Price, workerLog.Quantity)
+		
+	case "info":
+		// 정보 로그: [시간] 메시지
+		return fmt.Sprintf("[%s] %s", timestamp, workerLog.Message)
+		
+	case "warning":
+		// 경고 로그: [시간] 메시지
+		return fmt.Sprintf("[%s] %s", timestamp, workerLog.Message)
+		
+	default:
+		// 기본 로그: [시간] 메시지
+		return fmt.Sprintf("[%s] %s", timestamp, workerLog.Message)
+	}
 }
 
 // cleanErrorMessage CCXT 에러 메시지를 정리합니다
@@ -296,26 +339,26 @@ func cleanErrorMessage(errorMsg string) string {
 						var errorData map[string]interface{}
 						if err := json.Unmarshal([]byte(jsonPart), &errorData); err == nil {
 							if msg, ok := errorData["msg"].(string); ok {
-								return fmt.Sprintf("CCXT 에러: %s", msg)
+								return msg // "CCXT 에러:" 접두사 제거
 							}
 						}
 						// JSON 파싱 실패시 원본 반환
-						return fmt.Sprintf("CCXT 에러: %s", jsonPart)
+						return jsonPart
 					}
 				}
 				// 플랫폼명 추출
 				platform := parts[len(parts)-2]
-				return fmt.Sprintf("CCXT 에러 (%s): %s", platform, parts[len(parts)-1])
+				return fmt.Sprintf("%s: %s", platform, parts[len(parts)-1])
 			}
 		}
 		// panic 메시지에서 실제 에러 부분만 추출
 		lines := strings.Split(errorMsg, "\n")
 		for _, line := range lines {
 			if strings.Contains(line, "ccxtError") || strings.Contains(line, "InsufficientFunds") {
-				return fmt.Sprintf("CCXT 에러: %s", strings.TrimSpace(line))
+				return strings.TrimSpace(line) // "CCXT 에러:" 접두사 제거
 			}
 		}
-		return "CCXT 에러: 알 수 없는 오류"
+		return "알 수 없는 오류"
 	}
 
 	// 일반적인 에러 메시지는 그대로 반환

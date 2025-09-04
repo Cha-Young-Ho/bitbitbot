@@ -75,8 +75,11 @@ async function callRegister(userID: string, password: string): Promise<LoginResu
 
 async function callGetUserInfo(userID: string): Promise<LoginResult> {
     try {
+        console.log('callGetUserInfo 시작, userID:', userID);
         const { GetAccountInfo } = await import('../wailsjs/go/main/App');
+        console.log('GetAccountInfo import 완료');
         const result = await GetAccountInfo(userID);
+        console.log('GetAccountInfo 결과:', result);
         return result as LoginResult;
     } catch (error) {
         console.error('GetUserInfo error:', error);
@@ -588,7 +591,7 @@ async function removePlatform(platformName: string, name: string): Promise<void>
 }
 
 // Add order function
-function addSellOrder(event?: Event): void {
+async function addSellOrder(event?: Event): Promise<void> {
     // 탭 이동을 완전히 막기
     if (event) {
         event.preventDefault();
@@ -596,7 +599,7 @@ function addSellOrder(event?: Event): void {
         event.stopImmediatePropagation();
     }
     // API Key 목록을 드롭다운에 로드
-    loadPlatformKeys();
+    await loadPlatformKeys();
     document.getElementById('sell-order-modal')!.classList.add('active');
 }
 
@@ -622,27 +625,49 @@ function openEditOrderModal(order: SellOrder): void {
     (modal as any).dataset.oldName = order.name;
 }
 
-function loadPlatformKeys(): void {
+async function loadPlatformKeys(): Promise<void> {
     const userID = sessionStorage.getItem('userID');
+    
+    console.log('loadPlatformKeys 호출됨, userID:', userID);
     
     if (!userID) {
         showAlert('로그인이 필요합니다.', 'error');
         return;
     }
 
-    // 사용자 정보를 가져와서 API Key 목록을 드롭다운에 추가
-    getUserInfo(userID).then(() => {
-        const select = document.getElementById('platformKey-select') as HTMLSelectElement;
-        select.innerHTML = '<option value="">API Key를 선택하세요</option>';
+    try {
+        // 사용자 정보를 가져와서 API Key 목록을 드롭다운에 추가
+        console.log('callGetUserInfo 호출 시작');
+        const result = await callGetUserInfo(userID);
+        console.log('callGetUserInfo 결과:', result);
         
-        // 현재 플랫폼 목록을 드롭다운에 추가
-        currentPlatforms.forEach(platform => {
-            const option = document.createElement('option');
-            option.value = `${platform.platformName}-${platform.name}`;
-            option.textContent = `${platform.platformName} - ${platform.name}`;
-            select.appendChild(option);
-        });
-    });
+        if (result.success && result.platformKeys) {
+            console.log('플랫폼 키 개수:', result.platformKeys.length);
+            console.log('플랫폼 키 목록:', result.platformKeys);
+            
+            const select = document.getElementById('platformKey-select') as HTMLSelectElement;
+            select.innerHTML = '<option value="">API Key를 선택하세요</option>';
+            
+            // 플랫폼 목록을 드롭다운에 추가
+            result.platformKeys.forEach((platform: PlatformKey) => {
+                console.log('플랫폼 추가:', platform.platformName, platform.name);
+                const option = document.createElement('option');
+                option.value = `${platform.platformName}-${platform.name}`;
+                option.textContent = `${platform.platformName} - ${platform.name}`;
+                select.appendChild(option);
+            });
+            
+            console.log('드롭다운 옵션 개수:', select.options.length);
+        } else {
+            console.error('플랫폼 키 로드 실패:', result.message);
+            const select = document.getElementById('platformKey-select') as HTMLSelectElement;
+            select.innerHTML = '<option value="">API Key를 불러올 수 없습니다</option>';
+        }
+    } catch (error) {
+        console.error('플랫폼 키 로드 중 오류:', error);
+        const select = document.getElementById('platformKey-select') as HTMLSelectElement;
+        select.innerHTML = '<option value="">API Key를 불러올 수 없습니다</option>';
+    }
 }
 
 function toggleOrderDetail(orderId: string): void {

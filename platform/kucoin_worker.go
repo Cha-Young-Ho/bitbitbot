@@ -103,7 +103,7 @@ func (kw *KucoinWorker) executeSellOrder(price float64) {
 	kucoinSymbol := kw.convertToKucoinSymbol(kw.order.Symbol)
 
 	// CCXT를 사용하여 지정가 매도 주문 생성
-	orderID, err := kw.exchange.CreateLimitSellOrder(
+	_, err := kw.exchange.CreateLimitSellOrder(
 		kucoinSymbol,
 		kw.order.Quantity,
 		price,
@@ -115,10 +115,8 @@ func (kw *KucoinWorker) executeSellOrder(price float64) {
 		return
 	}
 
-	// 성공 시 응답 내용 로그
-	successMsg := fmt.Sprintf("주문 성공 (주문ID: %s)", orderID)
-	kw.manager.SendSystemLog("KucoinWorker", "executeSellOrder", successMsg, "info", "", kw.order.Name, "")
-	kw.sendLog("Kucoin 지정가 매도 주문이 접수되었습니다", "success", price, kw.order.Quantity)
+	// 성공 시 간단한 로그만 출력
+	kw.sendLog("주문 성공", "success", price, kw.order.Quantity)
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다

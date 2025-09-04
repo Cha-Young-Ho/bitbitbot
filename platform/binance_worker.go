@@ -124,15 +124,59 @@ func (bw *BinanceWorker) executeSellOrder() {
 		bw.status.LastError = err.Error()
 		bw.mu.Unlock()
 
+		// 에러 응답을 콘솔에 출력
+		bw.printOrderResult("Binance", false, "", err.Error())
+
 		bw.sendLog(fmt.Sprintf("매도 주문 실패: %v", err), "error")
 		bw.manager.SendSystemLog("BinanceWorker", "executeSellOrder",
 			fmt.Sprintf("매도 주문 실패: %v", err), "error", "", bw.order.Name, err.Error())
 		return
 	}
 
-	// 성공 로그
-	bw.sendLog(fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		bw.order.Price, bw.order.Quantity, orderID), "success", bw.order.Price, bw.order.Quantity)
+	// 성공 응답을 콘솔에 출력
+	orderIDStr := ""
+	if orderID.Id != nil {
+		orderIDStr = *orderID.Id
+	}
+	bw.printOrderResult("Binance", true, orderIDStr, "")
+
+	// 성공 시 간단한 로그만 출력
+	bw.sendLog("주문 성공", "success", bw.order.Price, bw.order.Quantity)
+}
+
+// printOrderResult 주문 결과를 콘솔에 출력
+func (bw *BinanceWorker) printOrderResult(exchangeName string, success bool, orderID, errorMsg string) {
+	fmt.Printf("\n=== %s 주문 결과 ===\n", exchangeName)
+	fmt.Printf("성공 여부: %t\n", success)
+	if success {
+		fmt.Printf("주문 ID: %s\n", orderID)
+		fmt.Printf("가격: %.8f\n", bw.order.Price)
+		fmt.Printf("수량: %.8f\n", bw.order.Quantity)
+		fmt.Printf("총 금액: %.8f\n", bw.order.Price*bw.order.Quantity)
+	} else {
+		fmt.Printf("에러 메시지: %s\n", errorMsg)
+	}
+	fmt.Printf("=== %s 주문 결과 끝 ===\n\n", exchangeName)
+}
+
+// formatLogMessage 로그 메시지 포맷팅
+func (bw *BinanceWorker) formatLogMessage(messageType, message string, price, quantity float64) string {
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	
+	switch messageType {
+	case "order":
+		return fmt.Sprintf("[%s] %s | 가격: %.8f | 수량: %.8f", timestamp, message, price, quantity)
+	case "success":
+		return fmt.Sprintf("[%s] ✅ %s | 가격: %.8f | 수량: %.8f", timestamp, message, price, quantity)
+	case "error":
+		return fmt.Sprintf("[%s] ❌ %s | 가격: %.8f | 수량: %.8f", timestamp, message, price, quantity)
+	case "info":
+		return fmt.Sprintf("[%s] ℹ️ %s", timestamp, message)
+	case "warning":
+		return fmt.Sprintf("[%s] ⚠️ %s", timestamp, message)
+	default:
+		return fmt.Sprintf("[%s] %s", timestamp, message)
+	}
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다

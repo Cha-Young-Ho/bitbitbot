@@ -112,7 +112,7 @@ func (kw *KorbitWorker) executeSellOrder() {
 		korbitSymbol, kw.order.Quantity, kw.order.Price), "info")
 
 	// Korbit API 직접 호출
-	orderID, err := kw.createKorbitOrder(korbitSymbol)
+	_, err := kw.createKorbitOrder(korbitSymbol)
 	if err != nil {
 		kw.mu.Lock()
 		kw.status.ErrorCount++
@@ -125,9 +125,8 @@ func (kw *KorbitWorker) executeSellOrder() {
 		return
 	}
 
-	// 성공 로그
-	kw.sendLog(fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		kw.order.Price, kw.order.Quantity, orderID), "success", kw.order.Price, kw.order.Quantity)
+	// 성공 시 간단한 로그만 출력
+	kw.sendLog("주문 성공", "success", kw.order.Price, kw.order.Quantity)
 }
 
 // createKorbitOrder Korbit API를 직접 호출하여 주문 생성

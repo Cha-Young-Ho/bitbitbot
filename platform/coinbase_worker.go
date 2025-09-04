@@ -112,7 +112,7 @@ func (cw *CoinbaseWorker) executeSellOrder() {
 		coinbaseSymbol, cw.order.Quantity, cw.order.Price), "info")
 
 	// CCXT를 사용한 지정가 매도 주문
-	orderID, err := cw.exchange.CreateLimitSellOrder(
+	_, err := cw.exchange.CreateLimitSellOrder(
 		coinbaseSymbol,    // 심볼 (예: BTC/USDT)
 		cw.order.Quantity, // 수량
 		cw.order.Price,    // 가격
@@ -130,9 +130,8 @@ func (cw *CoinbaseWorker) executeSellOrder() {
 		return
 	}
 
-	// 성공 로그
-	cw.sendLog(fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		cw.order.Price, cw.order.Quantity, orderID), "success", cw.order.Price, cw.order.Quantity)
+	// 성공 시 간단한 로그만 출력
+	cw.sendLog("주문 성공", "success", cw.order.Price, cw.order.Quantity)
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
