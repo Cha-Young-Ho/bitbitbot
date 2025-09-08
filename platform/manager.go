@@ -2,6 +2,8 @@ package platform
 
 import (
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strconv"
 )
 
@@ -280,5 +282,63 @@ func (h *Handler) InstallUpdate() map[string]interface{} {
 	return map[string]interface{}{
 		"success": true,
 		"message": "업데이트가 설치되었습니다. 애플리케이션을 재시작해주세요.",
+	}
+}
+
+// PlaySuccessSound 성공 소리 재생
+func (h *Handler) PlaySuccessSound() map[string]interface{} {
+	err := h.playSystemSound()
+	if err != nil {
+		return map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("소리 재생 실패: %v", err),
+		}
+	}
+	
+	return map[string]interface{}{
+		"success": true,
+		"message": "성공 소리가 재생되었습니다.",
+	}
+}
+
+// playSystemSound MP3 파일 재생
+func (h *Handler) playSystemSound() error {
+	// MP3 파일 경로 (실행 파일 기준 상대 경로)
+	mp3Path := "sound/trade_success.mp3"
+	
+	switch runtime.GOOS {
+	case "darwin": // macOS
+		// macOS에서 afplay로 MP3 재생
+		cmd := exec.Command("afplay", mp3Path)
+		return cmd.Run()
+	case "windows": // Windows
+		// Windows에서 PowerShell로 MP3 재생
+		cmd := exec.Command("powershell", "-c", fmt.Sprintf("(New-Object Media.SoundPlayer '%s').PlaySync()", mp3Path))
+		return cmd.Run()
+	case "linux": // Linux
+		// Linux에서 다양한 MP3 플레이어 시도
+		players := []string{"mpg123", "mpv", "ffplay", "paplay"}
+		for _, player := range players {
+			var cmd *exec.Cmd
+			switch player {
+			case "mpg123":
+				cmd = exec.Command("mpg123", "-q", mp3Path)
+			case "mpv":
+				cmd = exec.Command("mpv", "--no-video", "--really-quiet", mp3Path)
+			case "ffplay":
+				cmd = exec.Command("ffplay", "-nodisp", "-autoexit", mp3Path)
+			case "paplay":
+				cmd = exec.Command("paplay", mp3Path)
+			}
+			
+			if err := cmd.Run(); err == nil {
+				return nil // 성공하면 종료
+			}
+		}
+		// 모든 플레이어가 실패하면 beep 사용
+		cmd := exec.Command("beep", "-f", "800", "-l", "200")
+		return cmd.Run()
+	default:
+		return fmt.Errorf("지원되지 않는 운영체제: %s", runtime.GOOS)
 	}
 }

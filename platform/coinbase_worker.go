@@ -46,7 +46,6 @@ func (cbw *CoinbaseWorker) Start(ctx context.Context) {
 	cbw.running = true
 	cbw.mu.Unlock()
 	
-	cbw.storage.AddLog("info", "코인베이스 워커가 시작되었습니다.", cbw.config.Exchange, cbw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(cbw.config.RequestInterval * 1000)

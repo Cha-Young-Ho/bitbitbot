@@ -45,7 +45,6 @@ func (hw *HuobiWorker) Start(ctx context.Context) {
 	hw.running = true
 	hw.mu.Unlock()
 	
-	hw.storage.AddLog("info", "후오비 워커가 시작되었습니다.", hw.config.Exchange, hw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(hw.config.RequestInterval * 1000)

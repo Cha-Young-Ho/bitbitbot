@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	ccxt "github.com/ccxt/ccxt/go/v4"
 	"github.com/google/uuid"
 )
 
@@ -28,27 +27,10 @@ type CoinoneWorker struct {
 	accessKey string
 	secretKey string
 	url       string
-	exchange  ccxt.IExchange
 }
 
 // NewCoinoneWorker 새로운 코인원 워커를 생성합니다
 func NewCoinoneWorker(config *WorkerConfig, storage *MemoryStorage) *CoinoneWorker {
-	// CCXT는 생성만 하고 사용하지 않음 (코인원은 직접 HTTP API 사용)
-	exchangeConfig := map[string]interface{}{
-		"apiKey":          config.AccessKey,
-		"secret":          config.SecretKey,
-		"timeout":         30000, // 30초
-		"sandbox":         false, // 실제 거래
-		"enableRateLimit": true,
-	}
-
-	// Password Phrase가 있으면 추가
-	if config.PasswordPhrase != "" {
-		exchangeConfig["password"] = config.PasswordPhrase
-	}
-
-	exchange := ccxt.CreateExchange("coinone", exchangeConfig)
-
 	return &CoinoneWorker{
 		config:    config,
 		storage:   storage,
@@ -57,7 +39,6 @@ func NewCoinoneWorker(config *WorkerConfig, storage *MemoryStorage) *CoinoneWork
 		accessKey: config.AccessKey,
 		secretKey: config.SecretKey,
 		url:       "https://api.coinone.co.kr/v2.1/order",
-		exchange:  exchange,
 	}
 }
 
@@ -123,7 +104,13 @@ func (cw *CoinoneWorker) Stop() {
 	
 	if cw.running {
 		cw.running = false
-		close(cw.stopCh)
+		// 채널이 이미 닫혀있지 않은 경우에만 닫기
+		select {
+		case <-cw.stopCh:
+			// 이미 닫혀있음
+		default:
+			close(cw.stopCh)
+		}
 	}
 }
 
@@ -133,6 +120,7 @@ func (cw *CoinoneWorker) IsRunning() bool {
 	defer cw.mu.RUnlock()
 	return cw.running
 }
+
 
 // executeSellOrder 코인원에서 매도 주문 실행
 func (cw *CoinoneWorker) executeSellOrder() {
@@ -146,14 +134,9 @@ func (cw *CoinoneWorker) executeSellOrder() {
 
 	// 심볼 변환 (BTC/KRW -> BTC)
 	coinoneSymbol := cw.convertToCoinoneSymbol(cw.config.Symbol)
-	cw.storage.AddLog("info", fmt.Sprintf("변환된 심볼: %s", coinoneSymbol), cw.config.Exchange, cw.config.Symbol)
 
-	// 주문 시도 로그
-	cw.storage.AddLog("info", fmt.Sprintf("주문 시도 - 심볼: %s, 수량: %.8f, 가격: %.2f",
-		coinoneSymbol, cw.config.SellAmount, cw.config.SellPrice), cw.config.Exchange, cw.config.Symbol)
-
-	// Coinone API 직접 호출
-	orderID, err := cw.createCoinoneOrder(coinoneSymbol)
+	// Coinone API 2.1 직접 호출
+	orderID, err := cw.createCoinoneOrderV21(coinoneSymbol)
 	if err != nil {
 		cw.storage.AddLog("error", fmt.Sprintf("매도 주문 실패: %v", err), cw.config.Exchange, cw.config.Symbol)
 		return
@@ -164,24 +147,22 @@ func (cw *CoinoneWorker) executeSellOrder() {
 		cw.config.SellPrice, cw.config.SellAmount, orderID), cw.config.Exchange, cw.config.Symbol)
 }
 
-// createCoinoneOrder Coinone API를 직접 호출하여 주문 생성
-func (cw *CoinoneWorker) createCoinoneOrder(coinoneSymbol string) (string, error) {
-	// 1. 요청 바디 구성 (Coinone API 문서 기준)
+// createCoinoneOrderV21 코인원 API 2.1을 사용하여 주문 생성
+func (cw *CoinoneWorker) createCoinoneOrderV21(coinoneSymbol string) (string, error) {
+	// 1. 요청 바디 구성 (코인원 API 2.1 문서 기준)
 	nonce := uuid.New().String() // UUID v4 형식
 
 	requestBody := map[string]interface{}{
 		"access_token":    cw.accessKey,
 		"nonce":           nonce,
-		"side":            "SELL", // 매도 (대문자)
+		"side":            "SELL", // 매도
 		"quote_currency":  "KRW",
 		"target_currency": coinoneSymbol,
-		"type":            "LIMIT", // 지정가 (대문자)
+		"type":            "LIMIT", // 지정가
 		"price":           fmt.Sprintf("%.0f", cw.config.SellPrice),
 		"qty":             fmt.Sprintf("%.8f", cw.config.SellAmount),
-		"post_only":       true, // Boolean 타입
+		"post_only":       true,
 	}
-
-	cw.storage.AddLog("info", fmt.Sprintf("Coinone 주문 요청: %+v", requestBody), cw.config.Exchange, cw.config.Symbol)
 
 	// 2. JSON 문자열로 변환
 	jsonBody, err := json.Marshal(requestBody)
@@ -195,15 +176,13 @@ func (cw *CoinoneWorker) createCoinoneOrder(coinoneSymbol string) (string, error
 	// 4. HMAC-SHA512 서명 생성
 	signature := cw.createCoinoneSignature(payload)
 
-	cw.storage.AddLog("info", fmt.Sprintf("Coinone 서명: %s", signature), cw.config.Exchange, cw.config.Symbol)
-
 	// 5. HTTP 요청 생성
 	req, err := http.NewRequest("POST", cw.url, bytes.NewReader(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("요청 생성 실패: %v", err)
 	}
 
-	// 6. 헤더 설정 (Coinone API 문서 기준)
+	// 6. 헤더 설정 (코인원 API 2.1 문서 기준)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-COINONE-PAYLOAD", payload)
 	req.Header.Set("X-COINONE-SIGNATURE", signature)
@@ -222,9 +201,6 @@ func (cw *CoinoneWorker) createCoinoneOrder(coinoneSymbol string) (string, error
 		return "", fmt.Errorf("응답 파싱 실패: %v", err)
 	}
 
-	// 응답 전체를 로그에 출력 (디버깅용)
-	cw.storage.AddLog("info", fmt.Sprintf("코인원 API 응답 (status=%d): %+v", resp.StatusCode, response), cw.config.Exchange, cw.config.Symbol)
-
 	// 9. 응답 검증
 	if resp.StatusCode != 200 {
 		errorMsg := "알 수 없는 오류"
@@ -234,13 +210,22 @@ func (cw *CoinoneWorker) createCoinoneOrder(coinoneSymbol string) (string, error
 		if response["errorMsg"] != nil {
 			errorMsg += fmt.Sprintf(", 메시지: %v", response["errorMsg"])
 		}
-		if response["message"] != nil {
-			errorMsg += fmt.Sprintf(", 상세: %v", response["message"])
-		}
 		return "", fmt.Errorf("API 오류 (status=%d): %s", resp.StatusCode, errorMsg)
 	}
 
-	// 10. 주문 ID 추출
+	// 10. 결과 확인 (코인원 API는 result 필드로 성공/실패 구분)
+	if result, ok := response["result"].(string); ok && result == "error" {
+		errorMsg := "알 수 없는 오류"
+		if response["error_code"] != nil {
+			errorMsg = fmt.Sprintf("에러코드: %v", response["error_code"])
+		}
+		if response["error_msg"] != nil {
+			errorMsg += fmt.Sprintf(", 메시지: %v", response["error_msg"])
+		}
+		return "", fmt.Errorf("코인원 API 오류: %s", errorMsg)
+	}
+
+	// 11. 주문 ID 추출 (API 2.1에서는 order_id 필드 사용)
 	orderID, ok := response["order_id"].(string)
 	if !ok || orderID == "" {
 		return "", fmt.Errorf("주문 ID 없음: %v", response)
@@ -272,3 +257,4 @@ func (cw *CoinoneWorker) convertToCoinoneSymbol(symbol string) string {
 func (cw *CoinoneWorker) GetPlatformName() string {
 	return "Coinone"
 }
+

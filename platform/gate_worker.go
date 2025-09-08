@@ -46,7 +46,6 @@ func (gw *GateWorker) Start(ctx context.Context) {
 	gw.running = true
 	gw.mu.Unlock()
 	
-	gw.storage.AddLog("info", "Gate.io APIv4 워커가 시작되었습니다.", gw.config.Exchange, gw.config.Symbol)
 
 	// 주기적으로 매도 주문 실행
 	go func() {

@@ -794,6 +794,7 @@
         let logUpdateInterval;
         let currentEditingKeyId = null;
         let exchangeKeys = [];
+        let playedSuccessLogs = new Set(); // 재생한 성공 로그 추적
 
         // 초기화
         document.addEventListener('DOMContentLoaded', function() {
@@ -853,8 +854,21 @@
                         updateStatus();
                         addLog('success', '워커가 시작되었습니다.');
                         
-                        // 로그 업데이트 재시작
+                        // 재생된 성공 로그 목록 초기화 (새 워커 시작 시)
+                        playedSuccessLogs.clear();
+                        
+                        // 로그 업데이트 강화 (시작 시 확실히 재시작)
                         restartLogUpdates();
+                        
+                        // 추가 로그 업데이트 (시작 직후)
+                        setTimeout(() => {
+                            restartLogUpdates();
+                        }, 100);
+                        
+                        // 더 확실한 로그 업데이트 (시작 후 1초)
+                        setTimeout(() => {
+                            restartLogUpdates();
+                        }, 1000);
                     } else {
                         addLog('error', startResult.message);
                     }
@@ -875,8 +889,8 @@
                     updateStatus();
                     addLog('info', '워커가 중지되었습니다.');
                     
-                    // 로그 업데이트 재시작 (정지 후에도 로그 계속 표시)
-                    restartLogUpdates();
+                    // 로그 업데이트는 계속 유지 (정지 후에도 로그 표시)
+                    // restartLogUpdates(); // 제거 - 정지 후에도 로그 업데이트 계속
                 } else {
                     addLog('error', result.message);
                 }
@@ -1121,14 +1135,14 @@
         function startLogUpdates() {
             logUpdateInterval = setInterval(async () => {
                 try {
-                    const result = await window.go.main.App.GetLogs(100);
+                    const result = await window.go.main.App.GetLogs(200);
                     if (result.success && result.logs) {
                         updateLogDisplay(result.logs);
                     }
                 } catch (error) {
                     console.error('로그 업데이트 실패:', error);
                 }
-            }, 100); // 0.1초마다 업데이트 (매도 주문 간격과 동일)
+            }, 100); // 0.1초마다 업데이트 (빠른 로그 업데이트)
         }
 
         // 로그 업데이트 재시작
@@ -1176,9 +1190,36 @@
                         }
                         
                         successLogContainer.appendChild(successLogEntry);
+                        
+                        // 성공 로그도 최대 50개로 제한
+                        const maxSuccessLogs = 50;
+                        while (successLogContainer.children.length > maxSuccessLogs) {
+                            successLogContainer.removeChild(successLogContainer.firstChild);
+                        }
+                        
                         successLogContainer.scrollTop = successLogContainer.scrollHeight;
+                        
+                        // 성공 소리 재생 (중복 방지)
+                        const logKey = `${log.timestamp}-${log.message}`;
+                        if (!playedSuccessLogs.has(logKey)) {
+                            playedSuccessLogs.add(logKey);
+                            playSuccessSound();
+                            
+                            // 메모리 절약을 위해 오래된 키 제거 (최대 100개 유지)
+                            if (playedSuccessLogs.size > 100) {
+                                const firstKey = playedSuccessLogs.values().next().value;
+                                playedSuccessLogs.delete(firstKey);
+                            }
+                        }
                     }
                 }
+                
+                // 로그 개수가 100개를 초과하면 상단의 오래된 로그 삭제
+                const maxLogs = 100;
+                while (logContainer.children.length > maxLogs) {
+                    logContainer.removeChild(logContainer.firstChild);
+                }
+                
                 logContainer.scrollTop = logContainer.scrollHeight;
             }
         }
@@ -1193,6 +1234,15 @@
                 }
             } catch (error) {
                 console.error('버전 체크 실패:', error);
+            }
+        }
+
+        // 성공 소리 재생
+        async function playSuccessSound() {
+            try {
+                await window.go.main.App.PlaySuccessSound();
+            } catch (error) {
+                console.error('소리 재생 실패:', error);
             }
         }
 

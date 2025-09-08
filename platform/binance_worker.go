@@ -46,7 +46,6 @@ func (bw *BinanceWorker) Start(ctx context.Context) {
 	bw.running = true
 	bw.mu.Unlock()
 	
-	bw.storage.AddLog("info", "바이낸스 워커가 시작되었습니다.", bw.config.Exchange, bw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(bw.config.RequestInterval * 1000)

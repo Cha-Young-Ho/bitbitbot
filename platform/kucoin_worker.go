@@ -46,7 +46,6 @@ func (kcw *KuCoinWorker) Start(ctx context.Context) {
 	kcw.running = true
 	kcw.mu.Unlock()
 	
-	kcw.storage.AddLog("info", "쿠코인 워커가 시작되었습니다.", kcw.config.Exchange, kcw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(kcw.config.RequestInterval * 1000)

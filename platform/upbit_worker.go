@@ -49,7 +49,6 @@ func (uw *UpbitWorker) Start(ctx context.Context) {
 	uw.running = true
 	uw.mu.Unlock()
 	
-	uw.storage.AddLog("info", "업비트 워커가 시작되었습니다.", uw.config.Exchange, uw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(uw.config.RequestInterval * 1000)

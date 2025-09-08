@@ -57,7 +57,6 @@ func (bw *BitgetWorker) Start(ctx context.Context) {
 	bw.running = true
 	bw.mu.Unlock()
 	
-	bw.storage.AddLog("info", "비트겟 워커가 시작되었습니다.", bw.config.Exchange, bw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(bw.config.RequestInterval * 1000)
@@ -143,9 +142,6 @@ func (bw *BitgetWorker) executeSellOrder() {
 	// 비트겟 심볼 형식으로 변환 (예: BTC/USDT -> BTCUSDT)
 	bitgetSymbol := bw.convertToBitgetSymbol(bw.config.Symbol)
 
-	// 주문 시도 로그
-	bw.storage.AddLog("info", fmt.Sprintf("주문 시도 - 심볼: %s, 수량: %.8f, 가격: %.2f",
-		bitgetSymbol, bw.config.SellAmount, bw.config.SellPrice), bw.config.Exchange, bw.config.Symbol)
 
 	// CCXT를 사용한 지정가 매도 주문
 	orderID, err := bw.exchange.CreateLimitSellOrder(
@@ -179,7 +175,6 @@ func (bw *BitgetWorker) convertToBitgetSymbol(symbol string) string {
 	// 비트겟 마켓 형식으로 변환
 	bitgetSymbol := base + quote // "BTCUSDT"
 
-	bw.storage.AddLog("info", fmt.Sprintf("심볼 변환: %s -> %s", symbol, bitgetSymbol), bw.config.Exchange, bw.config.Symbol)
 
 	return bitgetSymbol
 }

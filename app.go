@@ -123,6 +123,11 @@ func (a *App) InstallUpdate() map[string]interface{} {
 	return a.handler.InstallUpdate()
 }
 
+// PlaySuccessSound 성공 소리 재생
+func (a *App) PlaySuccessSound() map[string]interface{} {
+	return a.handler.PlaySuccessSound()
+}
+
 // AddExchangeKey 거래소 키 추가
 func (a *App) AddExchangeKey(exchange, accessKey, secretKey, passwordPhrase string) map[string]interface{} {
 	key, err := a.keyStorage.AddKey(exchange, accessKey, secretKey, passwordPhrase)

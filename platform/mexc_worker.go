@@ -46,7 +46,6 @@ func (mw *MexcWorker) Start(ctx context.Context) {
 	mw.running = true
 	mw.mu.Unlock()
 	
-	mw.storage.AddLog("info", "MEXC 워커가 시작되었습니다.", mw.config.Exchange, mw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(mw.config.RequestInterval * 1000)

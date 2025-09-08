@@ -46,7 +46,6 @@ func (kw *KorbitWorker) Start(ctx context.Context) {
 	kw.running = true
 	kw.mu.Unlock()
 	
-	kw.storage.AddLog("info", "코빗 워커가 시작되었습니다.", kw.config.Exchange, kw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(kw.config.RequestInterval * 1000)

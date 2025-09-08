@@ -44,7 +44,7 @@ func (wm *WorkerManager) StartWorker(workerID string, config *WorkerConfig) map[
 		}
 	}
 
-	// 기존 워커가 있다면 정리
+	// 기존 워커가 있다면 완전히 정리
 	if existingWorker, exists := wm.workers[workerID]; exists {
 		wm.stopWorkerInternal(existingWorker, workerID)
 	}
@@ -61,6 +61,11 @@ func (wm *WorkerManager) StartWorker(workerID string, config *WorkerConfig) map[
 
 	// 워커 설정 저장
 	wm.workerConfigs[workerID] = config
+
+	// 새로운 컨텍스트 생성 (새 워커용)
+	newCtx, newCancel := context.WithCancel(context.Background())
+	wm.ctx = newCtx
+	wm.cancelFunc = newCancel
 
 	// 워커 시작 (별도 고루틴에서 실행)
 	go func() {
@@ -115,20 +120,15 @@ func (wm *WorkerManager) stopWorkerInternal(worker WorkerInterface, workerID str
 	// 워커 중지
 	worker.Stop()
 	
-	// 워커 맵에서 제거
+	// 워커 완전 삭제 (새로 시작할 때 새 인스턴스 생성)
 	delete(wm.workers, workerID)
-	
-	// 설정 제거
 	delete(wm.workerConfigs, workerID)
 	
 	// 상태 업데이트
 	wm.storage.SetWorkerStatus(workerID, "stopped")
 	
 	// 로그 추가
-	config := wm.workerConfigs[workerID]
-	if config != nil {
-		wm.storage.AddLog("info", fmt.Sprintf("워커 %s가 중지되었습니다.", workerID), config.Exchange, config.Symbol)
-	}
+	wm.storage.AddLog("info", fmt.Sprintf("워커 %s가 중지되었습니다.", workerID), "", "")
 }
 
 // StopAllWorkers 모든 워커 중지

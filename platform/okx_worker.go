@@ -57,7 +57,6 @@ func (ow *OKXWorker) Start(ctx context.Context) {
 	ow.running = true
 	ow.mu.Unlock()
 	
-	ow.storage.AddLog("info", "OKX 워커가 시작되었습니다.", ow.config.Exchange, ow.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(ow.config.RequestInterval * 1000)
@@ -142,9 +141,6 @@ func (ow *OKXWorker) executeSellOrder() {
 	// OKX 심볼 형식으로 변환 (예: BTC/USDT -> BTC-USDT)
 	okxSymbol := ow.convertToOKXSymbol(ow.config.Symbol)
 
-	// 주문 시도 로그
-	ow.storage.AddLog("info", fmt.Sprintf("주문 시도 - 심볼: %s, 수량: %.8f, 가격: %.2f",
-		okxSymbol, ow.config.SellAmount, ow.config.SellPrice), ow.config.Exchange, ow.config.Symbol)
 
 	// CCXT를 사용한 지정가 매도 주문
 	orderID, err := ow.exchange.CreateLimitSellOrder(
@@ -169,7 +165,6 @@ func (ow *OKXWorker) convertToOKXSymbol(symbol string) string {
 	// ETH/KRW -> ETH-KRW
 	okxSymbol := strings.Replace(symbol, "/", "-", -1)
 
-	ow.storage.AddLog("info", fmt.Sprintf("심볼 변환: %s -> %s", symbol, okxSymbol), ow.config.Exchange, ow.config.Symbol)
 
 	return okxSymbol
 }
