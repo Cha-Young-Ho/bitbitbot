@@ -50,21 +50,31 @@ mkdir -p "$DEPLOY_DIR"
 # 실행파일 복사
 cp "build/bin/bitbit-app.exe" "$DEPLOY_DIR/"
 
+# WAV 파일은 이제 코드에 임베드되어 별도 복사 불필요
+echo "✅ WAV 파일이 코드에 임베드되어 별도 파일이 필요하지 않습니다"
+
 # README 파일 생성
 cat > "$DEPLOY_DIR/README.txt" << EOF
 BitBit Bot - Windows 실행파일
 버전: ${VERSION}
 환경: ${ENVIRONMENT}
 
+파일 구성:
+- bitbit-app.exe: 메인 실행 파일 (소리 파일 포함)
+- 실행.bat: 실행을 위한 배치 파일
+- README.txt: 이 파일
+
 사용법:
 1. 이 폴더의 모든 파일을 윈도우 컴퓨터의 원하는 위치에 복사하세요
 2. bitbit-app.exe 파일을 더블클릭하여 실행하세요
 3. 프로그램이 자동으로 시작됩니다
+4. 매도 주문 성공 시 소리가 재생됩니다
 
 주의사항:
 - Windows 10/11에서 실행됩니다
 - 바이러스 백신 프로그램에서 차단될 수 있습니다 (정상적인 프로그램입니다)
 - 실행이 안 될 경우 우클릭 > "관리자 권한으로 실행"을 시도해보세요
+- 소리 파일은 실행파일에 포함되어 있어 별도 파일이 필요하지 않습니다
 
 문제가 발생하면 개발자에게 문의하세요.
 EOF

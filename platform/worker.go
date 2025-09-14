@@ -162,11 +162,8 @@ func (w *Worker) processRequest() {
 	w.mu.RUnlock()
 
 	if orderResult.Success {
-		// 매도 주문 성공 로그
-		successMessage := fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.4f, 총액=%.2f",
-			orderResult.OrderID, orderResult.Price, orderResult.Amount, orderResult.TotalAmount)
-		w.storage.AddLog("success", successMessage, w.config.Exchange, w.config.Symbol)
-		log.Printf("[%s] %s - %s", w.config.Exchange, w.config.Symbol, successMessage)
+		// 매도 주문 성공 - 각 거래소 워커에서 성공로그 생성
+		// 중복 방지를 위해 여기서는 로그 생성하지 않음
 	} else {
 		// 매도 주문 실패 로그
 		errorMessage := fmt.Sprintf("매도 주문 실패: %s", orderResult.ErrorMessage)

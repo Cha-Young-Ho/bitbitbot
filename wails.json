@@ -9,5 +9,8 @@
   "author": {
     "name": "Cha-Young-Ho",
     "email": "jkijki1249@gmail.com"
-  }
+  },
+  "files": [
+    "sound/**/*"
+  ]
 }

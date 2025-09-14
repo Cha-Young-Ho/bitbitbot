@@ -1238,9 +1238,9 @@
         }
 
         // 성공 소리 재생
-        async function playSuccessSound() {
+        function playSuccessSound() {
             try {
-                await window.go.main.App.PlaySuccessSound();
+                window.go.main.App.PlaySuccessSound();
             } catch (error) {
                 console.error('소리 재생 실패:', error);
             }

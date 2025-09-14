@@ -1,11 +1,17 @@
 package platform
 
 import (
+	_ "embed"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 )
+
+//go:embed trade_success.wav
+var embeddedWavData []byte
 
 // VersionChecker 버전 체크 인터페이스
 type VersionChecker interface {
@@ -301,38 +307,71 @@ func (h *Handler) PlaySuccessSound() map[string]interface{} {
 	}
 }
 
-// playSystemSound MP3 파일 재생
+// getSoundFilePath 임베드된 WAV 데이터를 임시 파일로 저장하고 경로 반환
+func (h *Handler) getSoundFilePath() string {
+	// 임시 디렉토리 생성
+	tempDir := os.TempDir()
+	soundDir := filepath.Join(tempDir, "bitbitbot")
+
+	// 디렉토리가 없으면 생성
+	if err := os.MkdirAll(soundDir, 0755); err != nil {
+		return ""
+	}
+
+	soundPath := filepath.Join(soundDir, "trade_success.wav")
+
+	// 임베드된 WAV 데이터를 임시 파일로 저장
+	if err := os.WriteFile(soundPath, embeddedWavData, 0644); err != nil {
+		return ""
+	}
+
+	return soundPath
+}
+
+
+// playSystemSound WAV 파일 재생
 func (h *Handler) playSystemSound() error {
-	// MP3 파일 경로 (실행 파일 기준 상대 경로)
-	mp3Path := "sound/trade_success.mp3"
+	// 임베드된 WAV 데이터를 임시 파일로 저장하고 재생
+	wavPath := h.getSoundFilePath()
+	
+	// 파일 경로가 비어있으면 실패
+	if wavPath == "" {
+		return fmt.Errorf("WAV 파일 경로를 생성할 수 없습니다")
+	}
 	
 	switch runtime.GOOS {
 	case "darwin": // macOS
-		// macOS에서 afplay로 MP3 재생
-		cmd := exec.Command("afplay", mp3Path)
+		// macOS에서 afplay로 WAV 재생
+		cmd := exec.Command("afplay", wavPath)
 		return cmd.Run()
 	case "windows": // Windows
-		// Windows에서 PowerShell로 MP3 재생
-		cmd := exec.Command("powershell", "-c", fmt.Sprintf("(New-Object Media.SoundPlayer '%s').PlaySync()", mp3Path))
+		// PowerShell을 백그라운드에서 실행하여 터미널창 숨김
+		cmd := exec.Command("powershell", "-WindowStyle", "Hidden", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+			fmt.Sprintf("(New-Object Media.SoundPlayer '%s').PlaySync()", wavPath))
+		if err := cmd.Run(); err == nil {
+			return nil
+		}
+		// fallback - 시스템 비프음
+		cmd = exec.Command("rundll32", "user32.dll,MessageBeep", "0x00000040")
 		return cmd.Run()
 	case "linux": // Linux
-		// Linux에서 다양한 MP3 플레이어 시도
-		players := []string{"mpg123", "mpv", "ffplay", "paplay"}
+		// Linux에서 WAV 파일 재생
+		players := []string{"paplay", "aplay", "ffplay", "mpv"}
 		for _, player := range players {
 			var cmd *exec.Cmd
 			switch player {
-			case "mpg123":
-				cmd = exec.Command("mpg123", "-q", mp3Path)
-			case "mpv":
-				cmd = exec.Command("mpv", "--no-video", "--really-quiet", mp3Path)
-			case "ffplay":
-				cmd = exec.Command("ffplay", "-nodisp", "-autoexit", mp3Path)
 			case "paplay":
-				cmd = exec.Command("paplay", mp3Path)
+				cmd = exec.Command("paplay", wavPath)
+			case "aplay":
+				cmd = exec.Command("aplay", wavPath)
+			case "ffplay":
+				cmd = exec.Command("ffplay", "-nodisp", "-autoexit", wavPath)
+			case "mpv":
+				cmd = exec.Command("mpv", "--no-video", "--really-quiet", wavPath)
 			}
 			
-			if err := cmd.Run(); err == nil {
-				return nil // 성공하면 종료
+			if cmd != nil && cmd.Run() == nil {
+				return nil
 			}
 		}
 		// 모든 플레이어가 실패하면 beep 사용
