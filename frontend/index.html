@@ -889,8 +889,11 @@
                     updateStatus();
                     addLog('info', '워커가 중지되었습니다.');
                     
-                    // 로그 업데이트는 계속 유지 (정지 후에도 로그 표시)
-                    // restartLogUpdates(); // 제거 - 정지 후에도 로그 업데이트 계속
+                    // 워커 정지 시 로그 업데이트도 중지
+                    if (logUpdateInterval) {
+                        clearInterval(logUpdateInterval);
+                        logUpdateInterval = null;
+                    }
                 } else {
                     addLog('error', result.message);
                 }
@@ -1158,70 +1161,60 @@
             const logContainer = document.getElementById('logContainer');
             const successLogContainer = document.getElementById('successLogContent');
             
-            // 디버깅 로그 제거
+            // 기존 로그를 완전히 지우고 새로 그리기 (중복 방지)
+            logContainer.innerHTML = '';
+            successLogContainer.innerHTML = '';
             
-            // 기존 로그와 비교하여 새로운 로그만 추가
-            const existingLogs = logContainer.children.length;
-            if (logs.length > existingLogs) {
-                for (let i = existingLogs; i < logs.length; i++) {
-                    const log = logs[i];
-                    const timestamp = new Date(log.timestamp).toLocaleTimeString();
+            // 로그를 시간순으로 정렬
+            logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            // 최근 100개 로그만 표시
+            const recentLogs = logs.slice(-100);
+            
+            recentLogs.forEach(log => {
+                const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                
+                // 메인 로그 창에 추가
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                logEntry.innerHTML = `
+                    <span class="log-timestamp">[${timestamp}]</span>
+                    <span class="log-level-${log.level}">[${log.level.toUpperCase()}]</span>
+                    <span class="log-message">${log.message}</span>
+                `;
+                logContainer.appendChild(logEntry);
+                
+                // 성공 로그인 경우 상단 성공 로그 창에도 추가
+                if (log.level === 'success') {
+                    const successLogEntry = document.createElement('div');
+                    successLogEntry.className = 'success-log-item';
+                    successLogEntry.innerHTML = `[${timestamp}] ${log.message}`;
+                    successLogContainer.appendChild(successLogEntry);
                     
-                    const logEntry = document.createElement('div');
-                    logEntry.className = 'log-entry';
-                    logEntry.innerHTML = `
-                        <span class="log-timestamp">[${timestamp}]</span>
-                        <span class="log-level-${log.level}">[${log.level.toUpperCase()}]</span>
-                        <span class="log-message">${log.message}</span>
-                    `;
-                    
-                    logContainer.appendChild(logEntry);
-                    
-                    // 성공 로그인 경우 상단 성공 로그 창에도 추가
-                    if (log.level === 'success') {
-                        const successLogEntry = document.createElement('div');
-                        successLogEntry.className = 'success-log-item';
-                        successLogEntry.innerHTML = `[${timestamp}] ${log.message}`;
+                    // 성공 소리 재생 (중복 방지)
+                    const logKey = `${log.timestamp}-${log.message}`;
+                    if (!playedSuccessLogs.has(logKey)) {
+                        playedSuccessLogs.add(logKey);
+                        playSuccessSound();
                         
-                        // 기존 "성공한 거래가 없습니다" 메시지 제거
-                        const firstItem = successLogContainer.querySelector('.success-log-item');
-                        if (firstItem && firstItem.textContent.includes('성공한 거래가 없습니다')) {
-                            firstItem.remove();
-                        }
-                        
-                        successLogContainer.appendChild(successLogEntry);
-                        
-                        // 성공 로그도 최대 50개로 제한
-                        const maxSuccessLogs = 50;
-                        while (successLogContainer.children.length > maxSuccessLogs) {
-                            successLogContainer.removeChild(successLogContainer.firstChild);
-                        }
-                        
-                        successLogContainer.scrollTop = successLogContainer.scrollHeight;
-                        
-                        // 성공 소리 재생 (중복 방지)
-                        const logKey = `${log.timestamp}-${log.message}`;
-                        if (!playedSuccessLogs.has(logKey)) {
-                            playedSuccessLogs.add(logKey);
-                            playSuccessSound();
-                            
-                            // 메모리 절약을 위해 오래된 키 제거 (최대 100개 유지)
-                            if (playedSuccessLogs.size > 100) {
-                                const firstKey = playedSuccessLogs.values().next().value;
-                                playedSuccessLogs.delete(firstKey);
-                            }
+                        // 메모리 절약을 위해 오래된 키 제거 (최대 100개 유지)
+                        if (playedSuccessLogs.size > 100) {
+                            const firstKey = playedSuccessLogs.values().next().value;
+                            playedSuccessLogs.delete(firstKey);
                         }
                     }
                 }
-                
-                // 로그 개수가 100개를 초과하면 상단의 오래된 로그 삭제
-                const maxLogs = 100;
-                while (logContainer.children.length > maxLogs) {
-                    logContainer.removeChild(logContainer.firstChild);
-                }
-                
-                logContainer.scrollTop = logContainer.scrollHeight;
+            });
+            
+            // 성공 로그도 최대 50개로 제한
+            const maxSuccessLogs = 50;
+            while (successLogContainer.children.length > maxSuccessLogs) {
+                successLogContainer.removeChild(successLogContainer.firstChild);
             }
+            
+            // 스크롤을 맨 아래로
+            logContainer.scrollTop = logContainer.scrollHeight;
+            successLogContainer.scrollTop = successLogContainer.scrollHeight;
         }
 
         // 버전 체크
