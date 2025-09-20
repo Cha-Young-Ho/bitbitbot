@@ -305,6 +305,12 @@ func (a *App) GetConfigInfo() map[string]interface{} {
 // OnStartup 애플리케이션 시작 시 호출
 func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
+	
+	// 메모리 저장소에 컨텍스트 설정
+	if a.handler != nil && a.handler.GetWorkerManager() != nil {
+		a.handler.GetWorkerManager().SetContext(ctx)
+	}
+	
 	// 시스템 시작 로그 제거
 
 	// 초기 버전 체크 및 상태 확인

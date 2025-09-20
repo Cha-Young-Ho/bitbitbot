@@ -802,6 +802,7 @@
             startLogUpdates();
             checkVersion();
             setupKeyForm();
+            setupEventListeners();
         });
 
         // 탭 전환
@@ -1184,25 +1185,15 @@
                 `;
                 logContainer.appendChild(logEntry);
                 
-                // 성공 로그인 경우 상단 성공 로그 창에도 추가
+                // 성공 로그인 경우 상단 성공 로그 창에도 추가 (단, 이벤트 시스템에서 처리하므로 소리는 재생하지 않음)
                 if (log.level === 'success') {
                     const successLogEntry = document.createElement('div');
                     successLogEntry.className = 'success-log-item';
                     successLogEntry.innerHTML = `[${timestamp}] ${log.message}`;
                     successLogContainer.appendChild(successLogEntry);
                     
-                    // 성공 소리 재생 (중복 방지)
-                    const logKey = `${log.timestamp}-${log.message}`;
-                    if (!playedSuccessLogs.has(logKey)) {
-                        playedSuccessLogs.add(logKey);
-                        playSuccessSound();
-                        
-                        // 메모리 절약을 위해 오래된 키 제거 (최대 100개 유지)
-                        if (playedSuccessLogs.size > 100) {
-                            const firstKey = playedSuccessLogs.values().next().value;
-                            playedSuccessLogs.delete(firstKey);
-                        }
-                    }
+                    // 참고: 성공 소리 재생은 이제 이벤트 시스템에서 처리됨
+                    // 중복 방지를 위해 여기서는 소리를 재생하지 않음
                 }
             });
             
@@ -1230,13 +1221,206 @@
             }
         }
 
-        // 성공 소리 재생
-        function playSuccessSound() {
+        // 이벤트 리스너 설정
+        function setupEventListeners() {
+            // Wails 런타임 이벤트 리스너 등록
+            if (window.runtime && window.runtime.EventsOn) {
+                // 매도 주문 성공 이벤트 수신
+                window.runtime.EventsOn('trade_success', function(data) {
+                    console.log('매도 주문 성공 이벤트 수신:', data);
+                    
+                    // 성공 로그 표시
+                    if (data.message) {
+                        addSuccessLog(data.message, data.timestamp);
+                    }
+                    
+                    // 소리 재생
+                    playJavaScriptSound();
+                });
+            } else if (window.go && window.go.main && window.go.main.App) {
+                // 대안 방법
+                window.go.main.App.On('trade_success', function(data) {
+                    console.log('매도 주문 성공 이벤트 수신 (대안):', data);
+                    
+                    // 성공 로그 표시
+                    if (data.message) {
+                        addSuccessLog(data.message, data.timestamp);
+                    }
+                    
+                    // 소리 재생
+                    playJavaScriptSound();
+                });
+            }
+        }
+
+        // 성공 로그 추가 (상단 성공 로그 창에)
+        function addSuccessLog(message, timestamp) {
+            const successLogContainer = document.getElementById('successLogContent');
+            
+            // "성공한 거래가 없습니다" 메시지 제거
+            const emptyMessage = successLogContainer.querySelector('.success-log-item');
+            if (emptyMessage && emptyMessage.textContent.includes('성공한 거래가 없습니다')) {
+                emptyMessage.remove();
+            }
+            
+            const successLogEntry = document.createElement('div');
+            successLogEntry.className = 'success-log-item';
+            successLogEntry.innerHTML = `[${timestamp || new Date().toLocaleTimeString()}] ${message}`;
+            successLogContainer.appendChild(successLogEntry);
+            
+            // 최대 50개로 제한
+            const maxSuccessLogs = 50;
+            while (successLogContainer.children.length > maxSuccessLogs) {
+                successLogContainer.removeChild(successLogContainer.firstChild);
+            }
+            
+            // 스크롤을 맨 아래로
+            successLogContainer.scrollTop = successLogContainer.scrollHeight;
+        }
+
+        // JavaScript로 자체 음 생성 및 재생
+        function playJavaScriptSound() {
+            try {
+                // Web Audio API를 사용하여 자체 음 생성
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // 오디오 컨텍스트가 suspended 상태인 경우 resume
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+                
+                // 성공음을 위한 멜로디 패턴들 (더 크고 길고 경쾌한 소리)
+                const soundPatterns = [
+                    // 패턴 1: 긴 상승하는 멜로디 (도-미-솔-도-미-솔-도)
+                    [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98, 2093.00],
+                    // 패턴 2: 경쾌한 긴 멜로디
+                    [880, 1108.73, 1318.51, 1567.98, 1760, 2093.00],
+                    // 패턴 3: 매우 긴 멜로디
+                    [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98, 1760, 2093.00, 2349.32],
+                    // 패턴 4: 경쾌한 비프음 시리즈
+                    [800, 1000, 1200, 1400, 1600, 1800],
+                    // 패턴 5: 하모니가 있는 긴 소리
+                    [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98],
+                    // 패턴 6: 더 복잡한 긴 멜로디
+                    [440, 523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98, 1760],
+                    // 패턴 7: 경쾌한 긴 소리
+                    [660, 880, 1320, 1760, 2200, 2640],
+                    // 패턴 8: 매우 경쾌한 긴 멜로디
+                    [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98, 1760, 2093.00, 2349.32, 2637.02]
+                ];
+                
+                // 랜덤하게 패턴 선택
+                const pattern = soundPatterns[Math.floor(Math.random() * soundPatterns.length)];
+                const duration = 0.25; // 각 음의 지속시간 (더 길게)
+                const volume = 0.35; // 볼륨 (더 크게)
+                
+                let currentTime = audioContext.currentTime;
+                
+                // 각 음을 순차적으로 재생
+                pattern.forEach((frequency, index) => {
+                    // 메인 오실레이터
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    // 오실레이터 설정 (더 경쾌한 소리를 위해 다양한 파형 사용)
+                    const waveTypes = ['sine', 'triangle', 'sawtooth'];
+                    oscillator.type = waveTypes[Math.floor(Math.random() * waveTypes.length)];
+                    oscillator.frequency.setValueAtTime(frequency, currentTime);
+                    
+                    // 게인 설정 (볼륨 페이드 인/아웃)
+                    gainNode.gain.setValueAtTime(0, currentTime);
+                    gainNode.gain.linearRampToValueAtTime(volume, currentTime + 0.02);
+                    gainNode.gain.linearRampToValueAtTime(0, currentTime + duration);
+                    
+                    // 연결
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    // 재생
+                    oscillator.start(currentTime);
+                    oscillator.stop(currentTime + duration);
+                    
+                    // 하모니 추가 (옥타브 위의 음)
+                    if (Math.random() > 0.2) { // 80% 확률로 하모니 추가 (더 자주)
+                        const harmonyOscillator = audioContext.createOscillator();
+                        const harmonyGainNode = audioContext.createGain();
+                        
+                        harmonyOscillator.type = waveTypes[Math.floor(Math.random() * waveTypes.length)];
+                        harmonyOscillator.frequency.setValueAtTime(frequency * 2, currentTime); // 옥타브 위
+                        
+                        harmonyGainNode.gain.setValueAtTime(0, currentTime);
+                        harmonyGainNode.gain.linearRampToValueAtTime(volume * 0.5, currentTime + 0.02);
+                        harmonyGainNode.gain.linearRampToValueAtTime(0, currentTime + duration);
+                        
+                        harmonyOscillator.connect(harmonyGainNode);
+                        harmonyGainNode.connect(audioContext.destination);
+                        
+                        harmonyOscillator.start(currentTime);
+                        harmonyOscillator.stop(currentTime + duration);
+                    }
+                    
+                    // 베이스 음 추가 (옥타브 아래의 음)
+                    if (Math.random() > 0.5) { // 50% 확률로 베이스 추가 (더 자주)
+                        const bassOscillator = audioContext.createOscillator();
+                        const bassGainNode = audioContext.createGain();
+                        
+                        bassOscillator.type = waveTypes[Math.floor(Math.random() * waveTypes.length)];
+                        bassOscillator.frequency.setValueAtTime(frequency * 0.5, currentTime); // 옥타브 아래
+                        
+                        bassGainNode.gain.setValueAtTime(0, currentTime);
+                        bassGainNode.gain.linearRampToValueAtTime(volume * 0.3, currentTime + 0.02);
+                        bassGainNode.gain.linearRampToValueAtTime(0, currentTime + duration);
+                        
+                        bassOscillator.connect(bassGainNode);
+                        bassGainNode.connect(audioContext.destination);
+                        
+                        bassOscillator.start(currentTime);
+                        bassOscillator.stop(currentTime + duration);
+                    }
+                    
+                    // 추가 하모니 (3도 위의 음)
+                    if (Math.random() > 0.6) { // 40% 확률로 3도 위 하모니 추가
+                        const thirdOscillator = audioContext.createOscillator();
+                        const thirdGainNode = audioContext.createGain();
+                        
+                        thirdOscillator.type = waveTypes[Math.floor(Math.random() * waveTypes.length)];
+                        thirdOscillator.frequency.setValueAtTime(frequency * 1.25, currentTime); // 3도 위
+                        
+                        thirdGainNode.gain.setValueAtTime(0, currentTime);
+                        thirdGainNode.gain.linearRampToValueAtTime(volume * 0.3, currentTime + 0.02);
+                        thirdGainNode.gain.linearRampToValueAtTime(0, currentTime + duration);
+                        
+                        thirdOscillator.connect(thirdGainNode);
+                        thirdGainNode.connect(audioContext.destination);
+                        
+                        thirdOscillator.start(currentTime);
+                        thirdOscillator.stop(currentTime + duration);
+                    }
+                    
+                    // 다음 음을 위한 시간 증가 (겹침으로 부드럽게)
+                    currentTime += duration * 0.4; // 더 겹치게 하여 풍부한 소리
+                });
+                
+            } catch (error) {
+                console.error('JavaScript 자체 음 재생 오류:', error);
+                // 자체 음 재생 실패 시 Go 함수 호출
+                playGoSound();
+            }
+        }
+
+        // Go 함수로 소리 재생 (fallback)
+        function playGoSound() {
             try {
                 window.go.main.App.PlaySuccessSound();
             } catch (error) {
-                console.error('소리 재생 실패:', error);
+                console.error('Go 소리 재생 실패:', error);
             }
+        }
+
+        // 성공 소리 재생 (기존 함수 유지)
+        function playSuccessSound() {
+            // JavaScript 소리 재생을 우선 시도
+            playJavaScriptSound();
         }
 
     </script>

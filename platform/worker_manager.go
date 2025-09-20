@@ -339,3 +339,13 @@ func (wm *WorkerManager) GetRunningWorkerCount() int {
 
 	return count
 }
+
+// SetContext 컨텍스트 설정
+func (wm *WorkerManager) SetContext(ctx context.Context) {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+	
+	wm.ctx = ctx
+	// 메모리 저장소에도 컨텍스트 설정
+	wm.storage.SetContext(ctx)
+}

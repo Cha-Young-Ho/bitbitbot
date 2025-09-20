@@ -232,6 +232,11 @@ func (h *Handler) GetKeyStorage() *KeyStorage {
 	return h.keyStorage
 }
 
+// GetWorkerManager 워커 매니저 반환
+func (h *Handler) GetWorkerManager() *WorkerManager {
+	return h.workerManager
+}
+
 // DownloadUpdate 업데이트 파일 다운로드
 func (h *Handler) DownloadUpdate() map[string]interface{} {
 	// S3에서 최신 버전 정보 가져오기

@@ -1,8 +1,11 @@
 package platform
 
 import (
+	"context"
 	"sync"
 	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // Config S3 설정 정보
@@ -23,6 +26,7 @@ type MemoryStorage struct {
 	workerStatus  map[string]*WorkerStatus
 	logs          []LogEntry
 	lastUpdate    time.Time
+	ctx           context.Context
 }
 
 // WorkerConfig 워커 설정
@@ -62,7 +66,15 @@ func NewMemoryStorage() *MemoryStorage {
 		workerStatus:  make(map[string]*WorkerStatus),
 		logs:          make([]LogEntry, 0),
 		lastUpdate:    time.Now(),
+		ctx:           context.Background(),
 	}
+}
+
+// SetContext 컨텍스트 설정
+func (s *MemoryStorage) SetContext(ctx context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ctx = ctx
 }
 
 // SetWorkerConfig 워커 설정 저장
@@ -146,6 +158,21 @@ func (s *MemoryStorage) AddLog(level, message, exchange, symbol string) {
 	// 로그 개수 제한 (최대 1000개)
 	if len(s.logs) > 1000 {
 		s.logs = s.logs[len(s.logs)-1000:]
+	}
+
+	// 매도 주문 성공 시 프론트엔드에 이벤트 전송
+	if level == "success" && s.ctx != nil {
+		// 비동기로 이벤트 전송 (락을 해제한 후)
+		go func() {
+			eventData := map[string]interface{}{
+				"type":     "sell_order_success",
+				"message":  message,
+				"exchange": exchange,
+				"symbol":   symbol,
+				"timestamp": logEntry.Timestamp.Format("15:04:05"),
+			}
+			runtime.EventsEmit(s.ctx, "trade_success", eventData)
+		}()
 	}
 }
 
