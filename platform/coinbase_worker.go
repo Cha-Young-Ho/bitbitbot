@@ -125,12 +125,11 @@ func (cbw *CoinbaseWorker) executeSellOrder() {
 	timestamp := time.Now().Unix()
 
 	requestBody := map[string]interface{}{
-		"product_id":    strings.ReplaceAll(cbw.config.Symbol, "/", "-"),
-		"side":          "sell",
-		"type":          "limit",
-		"size":          fmt.Sprintf("%.8f", cbw.config.SellAmount),
-		"price":         fmt.Sprintf("%.8f", cbw.config.SellPrice),
-		"time_in_force": "GTC",
+		"product_id": strings.ReplaceAll(cbw.config.Symbol, "/", "-"),
+		"side":       "sell",
+		"type":       "limit",
+		"size":       fmt.Sprintf("%.8f", cbw.config.SellAmount),
+		"price":      fmt.Sprintf("%.8f", cbw.config.SellPrice),
 	}
 
 	jsonBody, err := json.Marshal(requestBody)

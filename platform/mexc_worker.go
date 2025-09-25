@@ -125,12 +125,11 @@ func (mw *MexcWorker) executeSellOrder() {
 	timestamp := time.Now().UnixMilli()
 
 	params := map[string]string{
-		"symbol":      strings.ReplaceAll(mw.config.Symbol, "/", ""),
-		"side":        "SELL",
-		"type":        "LIMIT",
-		"timeInForce": "GTC",
-		"quantity":    fmt.Sprintf("%.8f", mw.config.SellAmount),
-		"price":       fmt.Sprintf("%.8f", mw.config.SellPrice),
+		"symbol":   strings.ReplaceAll(mw.config.Symbol, "/", ""),
+		"side":     "SELL",
+		"type":     "LIMIT",
+		"quantity": fmt.Sprintf("%.8f", mw.config.SellAmount),
+		"price":    fmt.Sprintf("%.8f", mw.config.SellPrice),
 		"timestamp":   strconv.FormatInt(timestamp, 10),
 	}
 

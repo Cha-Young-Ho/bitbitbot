@@ -247,8 +247,7 @@ func (w *Worker) executeBinanceSellOrder(sellPrice float64) OrderResult {
 	params.Set("symbol", strings.ReplaceAll(w.config.Symbol, "/", ""))
 	params.Set("side", "SELL")
 	params.Set("type", "LIMIT")
-	params.Set("timeInForce", "GTC")
-	params.Set("quantity", fmt.Sprintf("%.4f", w.config.SellAmount))
+	params.Set("quantity", fmt.Sprintf("%.8f", w.config.SellAmount))
 	params.Set("price", fmt.Sprintf("%.8f", sellPrice))
 	params.Set("timestamp", strconv.FormatInt(timestamp, 10))
 
@@ -435,12 +434,11 @@ func (w *Worker) executeBybitSellOrder(sellPrice float64) OrderResult {
 
 	requestBody := map[string]interface{}{
 		"category":    "spot",
-		"symbol":      strings.ReplaceAll(w.config.Symbol, "/", ""),
-		"side":        "Sell",
-		"orderType":   "Limit",
-		"qty":         fmt.Sprintf("%.8f", w.config.SellAmount),
-		"price":       fmt.Sprintf("%.8f", sellPrice),
-		"timeInForce": "GTC",
+		"symbol":    strings.ReplaceAll(w.config.Symbol, "/", ""),
+		"side":      "Sell",
+		"orderType": "Limit",
+		"qty":       fmt.Sprintf("%.8f", w.config.SellAmount),
+		"price":     fmt.Sprintf("%.8f", sellPrice),
 	}
 
 	jsonBody, _ := json.Marshal(requestBody)
@@ -875,9 +873,9 @@ func (w *Worker) executeCoinoneSellOrder(sellPrice float64) OrderResult {
 		"quote_currency":  "KRW",
 		"target_currency": coinoneSymbol,
 		"type":            "limit",
-		"price":           fmt.Sprintf("%.0f", sellPrice),
+		"price":           fmt.Sprintf("%.8f", sellPrice), // 소수점 8자리까지 유지
 		"qty":             fmt.Sprintf("%.8f", w.config.SellAmount),
-		"post_only":       "1",
+		"post_only":       "0", // Maker/Taker 모두 허용 (매수벽에 걸려도 체결 가능)
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
@@ -943,10 +941,9 @@ func (w *Worker) executeKorbitSellOrder(sellPrice float64) OrderResult {
 	params := url.Values{}
 	params.Set("symbol", korbitSymbol) // btc_krw
 	params.Set("side", "sell")         // 매도
-	params.Set("price", fmt.Sprintf("%.0f", sellPrice))
+	params.Set("price", fmt.Sprintf("%.8f", sellPrice)) // 소수점 8자리까지 유지
 	params.Set("qty", fmt.Sprintf("%.8f", w.config.SellAmount))
 	params.Set("orderType", "limit") // 지정가
-	params.Set("timeInForce", "gtc") // Good Till Cancel
 	params.Set("timestamp", timestamp)
 
 	// HMAC-SHA256 서명 생성

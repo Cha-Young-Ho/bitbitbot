@@ -138,7 +138,7 @@ func (bw *BithumbWorker) executeSellOrder() {
 	params.Set("market", bithumbSymbol)
 	params.Set("side", "ask") // ask = 매도, bid = 매수
 	params.Set("ord_type", "limit") // limit = 지정가 주문
-	params.Set("price", fmt.Sprintf("%.0f", bw.config.SellPrice))
+	params.Set("price", fmt.Sprintf("%.8f", bw.config.SellPrice)) // 소수점 8자리까지 유지
 	params.Set("volume", fmt.Sprintf("%.8f", bw.config.SellAmount))
 
 	// JWT 토큰 생성 (쿼리 파라미터를 query_hash로 사용)

@@ -125,13 +125,12 @@ func (kcw *KuCoinWorker) executeSellOrder() {
 	timestamp := time.Now().UnixMilli()
 
 	requestBody := map[string]interface{}{
-		"clientOid":   fmt.Sprintf("sell_%d", timestamp),
-		"symbol":      strings.ReplaceAll(kcw.config.Symbol, "/", "-"),
-		"side":        "sell",
-		"type":        "limit",
-		"size":        fmt.Sprintf("%.8f", kcw.config.SellAmount),
-		"price":       fmt.Sprintf("%.8f", kcw.config.SellPrice),
-		"timeInForce": "GTC",
+		"clientOid": fmt.Sprintf("sell_%d", timestamp),
+		"symbol":    strings.ReplaceAll(kcw.config.Symbol, "/", "-"),
+		"side":      "sell",
+		"type":      "limit",
+		"size":      fmt.Sprintf("%.8f", kcw.config.SellAmount),
+		"price":     fmt.Sprintf("%.8f", kcw.config.SellPrice),
 	}
 
 	jsonBody, err := json.Marshal(requestBody)

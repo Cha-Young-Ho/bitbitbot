@@ -159,9 +159,9 @@ func (cw *CoinoneWorker) createCoinoneOrderV21(coinoneSymbol string) (string, er
 		"quote_currency":  "KRW",
 		"target_currency": coinoneSymbol,
 		"type":            "LIMIT", // 지정가
-		"price":           fmt.Sprintf("%.0f", cw.config.SellPrice),
+		"price":           fmt.Sprintf("%.8f", cw.config.SellPrice), // 소수점 8자리까지 유지
 		"qty":             fmt.Sprintf("%.8f", cw.config.SellAmount),
-		"post_only":       true,
+		"post_only":       false, // Maker/Taker 모두 허용 (매수벽에 걸려도 체결 가능)
 	}
 
 	// 2. JSON 문자열로 변환
@@ -200,6 +200,9 @@ func (cw *CoinoneWorker) createCoinoneOrderV21(coinoneSymbol string) (string, er
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return "", fmt.Errorf("응답 파싱 실패: %v", err)
 	}
+
+	// 응답 로그 출력 (디버깅용)
+	cw.storage.AddLog("info", fmt.Sprintf("코인원 API 응답: %+v", response), cw.config.Exchange, cw.config.Symbol)
 
 	// 9. 응답 검증
 	if resp.StatusCode != 200 {

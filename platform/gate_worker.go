@@ -152,7 +152,6 @@ func (gw *GateWorker) executeGateAPISellOrder() OrderResult {
 		"type":          "limit",
 		"amount":        fmt.Sprintf("%.8f", gw.config.SellAmount),
 		"price":         fmt.Sprintf("%.8f", gw.config.SellPrice),
-		"time_in_force": "gtc", // Good Till Cancelled
 		"text":          fmt.Sprintf("t-bitbitbot_%d", time.Now().Unix()), // 사용자 정의 정보
 	}
 
