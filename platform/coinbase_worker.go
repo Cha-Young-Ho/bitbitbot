@@ -150,6 +150,7 @@ func (cbw *CoinbaseWorker) executeSellOrder() {
 	req.Header.Set("CB-ACCESS-KEY", cbw.accessKey)
 	req.Header.Set("CB-ACCESS-SIGN", signature)
 	req.Header.Set("CB-ACCESS-TIMESTAMP", strconv.FormatInt(timestamp, 10))
+	req.Header.Set("CB-ACCESS-PASSPHRASE", cbw.config.PasswordPhrase)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}

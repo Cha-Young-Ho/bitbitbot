@@ -151,6 +151,7 @@ func (kcw *KuCoinWorker) executeSellOrder() {
 	req.Header.Set("KC-API-KEY", kcw.accessKey)
 	req.Header.Set("KC-API-SIGN", signature)
 	req.Header.Set("KC-API-TIMESTAMP", strconv.FormatInt(timestamp, 10))
+	req.Header.Set("KC-API-PASSPHRASE", kcw.config.PasswordPhrase)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}

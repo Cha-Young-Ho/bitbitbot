@@ -121,10 +121,30 @@ func (hw *HuobiWorker) executeSellOrder() {
 	}
 	hw.mu.RUnlock()
 
+	// 먼저 잔고 확인
+	balance, err := hw.getBalance()
+	if err != nil {
+		hw.storage.AddLog("error", fmt.Sprintf("잔고 조회 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
+		return
+	}
+
+	// 매도할 수량이 충분한지 확인
+	if balance < hw.config.SellAmount {
+		hw.storage.AddLog("warning", fmt.Sprintf("잔고 부족: 보유량=%.8f, 매도량=%.8f", balance, hw.config.SellAmount), hw.config.Exchange, hw.config.Symbol)
+		return
+	}
+
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05")
 
+	// 실제 계정 ID 조회
+	accountID, err := hw.getAccountID()
+	if err != nil {
+		hw.storage.AddLog("error", fmt.Sprintf("계정 ID 조회 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
+		return
+	}
+
 	requestBody := map[string]interface{}{
-		"account-id": "12345678", // 계정 ID (실제로는 조회 필요)
+		"account-id": accountID, // 실제 계정 ID 사용
 		"symbol":     strings.ToLower(strings.ReplaceAll(hw.config.Symbol, "/", "")),
 		"type":       "sell-limit",
 		"amount":     fmt.Sprintf("%.8f", hw.config.SellAmount),
@@ -185,6 +205,134 @@ func (hw *HuobiWorker) executeSellOrder() {
 		}
 		hw.storage.AddLog("error", fmt.Sprintf("후오비 API 오류: %s", errorMsg), hw.config.Exchange, hw.config.Symbol)
 	}
+}
+
+// getBalance 후오비에서 잔고 조회
+func (hw *HuobiWorker) getBalance() (float64, error) {
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05")
+	
+	// 심볼에서 기본 통화 추출 (예: BTC/USDT -> BTC)
+	parts := strings.Split(hw.config.Symbol, "/")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("잘못된 심볼 형식: %s", hw.config.Symbol)
+	}
+	baseCurrency := strings.ToLower(parts[0]) // btc
+	
+	// 잔고 조회 요청
+	balanceURL := "https://api.huobi.pro/v1/account/accounts/balance"
+	req, err := http.NewRequest("GET", balanceURL, nil)
+	if err != nil {
+		return 0, err
+	}
+	
+	// 서명 생성 (GET 요청용)
+	message := "GET\napi.huobi.pro\n/v1/account/accounts/balance\n"
+	h := hmac.New(sha256.New, []byte(hw.secretKey))
+	h.Write([]byte(message))
+	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("AccessKeyId", hw.accessKey)
+	req.Header.Set("SignatureMethod", "HmacSHA256")
+	req.Header.Set("SignatureVersion", "2")
+	req.Header.Set("Timestamp", timestamp)
+	req.Header.Set("Signature", signature)
+	
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, err
+	}
+	
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("잔고 조회 실패: %v", result)
+	}
+	
+	// 잔고 데이터 파싱
+	if data, ok := result["data"].([]interface{}); ok && len(data) > 0 {
+		if account, ok := data[0].(map[string]interface{}); ok {
+			if list, ok := account["list"].([]interface{}); ok {
+				for _, item := range list {
+					if balance, ok := item.(map[string]interface{}); ok {
+						if currency, ok := balance["currency"].(string); ok && currency == baseCurrency {
+							if type_, ok := balance["type"].(string); ok && type_ == "trade" {
+								if balanceStr, ok := balance["balance"].(string); ok {
+									var balance float64
+									if _, err := fmt.Sscanf(balanceStr, "%f", &balance); err == nil {
+										return balance, nil
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	return 0, fmt.Errorf("잔고 정보를 찾을 수 없습니다")
+}
+
+// getAccountID 후오비에서 계정 ID 조회
+func (hw *HuobiWorker) getAccountID() (string, error) {
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05")
+	
+	// 계정 조회 요청
+	accountURL := "https://api.huobi.pro/v1/account/accounts"
+	req, err := http.NewRequest("GET", accountURL, nil)
+	if err != nil {
+		return "", err
+	}
+	
+	// 서명 생성 (GET 요청용)
+	message := "GET\napi.huobi.pro\n/v1/account/accounts\n"
+	h := hmac.New(sha256.New, []byte(hw.secretKey))
+	h.Write([]byte(message))
+	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("AccessKeyId", hw.accessKey)
+	req.Header.Set("SignatureMethod", "HmacSHA256")
+	req.Header.Set("SignatureVersion", "2")
+	req.Header.Set("Timestamp", timestamp)
+	req.Header.Set("Signature", signature)
+	
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("계정 조회 실패: %v", result)
+	}
+	
+	// 계정 데이터 파싱 (첫 번째 계정의 ID 반환)
+	if data, ok := result["data"].([]interface{}); ok && len(data) > 0 {
+		if account, ok := data[0].(map[string]interface{}); ok {
+			if id, ok := account["id"].(float64); ok {
+				return fmt.Sprintf("%.0f", id), nil
+			}
+		}
+	}
+	
+	return "", fmt.Errorf("계정 ID를 찾을 수 없습니다")
 }
 
 // createHuobiSignature 후오비 HMAC-SHA256 서명 생성

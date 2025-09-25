@@ -128,6 +128,7 @@ func (bw *BinanceWorker) executeSellOrder() {
 	params.Set("symbol", strings.ReplaceAll(bw.config.Symbol, "/", ""))
 	params.Set("side", "SELL")
 	params.Set("type", "LIMIT")
+	params.Set("timeInForce", "GTC")
 	params.Set("quantity", fmt.Sprintf("%.8f", bw.config.SellAmount))
 	params.Set("price", fmt.Sprintf("%.8f", bw.config.SellPrice))
 	params.Set("timestamp", strconv.FormatInt(timestamp, 10))

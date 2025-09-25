@@ -1,7 +1,6 @@
 package platform
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -9,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -133,34 +134,29 @@ func (mw *MexcWorker) executeSellOrder() {
 		"timestamp":   strconv.FormatInt(timestamp, 10),
 	}
 
-	// 서명 생성
+	// MEXC API는 query string 방식으로 요청해야 함
+	queryParams := url.Values{}
+	queryParams.Set("symbol", params["symbol"])
+	queryParams.Set("side", params["side"])
+	queryParams.Set("type", params["type"])
+	queryParams.Set("quantity", params["quantity"])
+	queryParams.Set("price", params["price"])
+	queryParams.Set("timestamp", params["timestamp"])
+
+	// 서명 생성 (signature는 query string에 포함)
 	signature := mw.createMexcSignature(params)
+	queryParams.Set("signature", signature)
 
-	requestBody := map[string]interface{}{
-		"symbol":      params["symbol"],
-		"side":        params["side"],
-		"type":        params["type"],
-		"timeInForce": params["timeInForce"],
-		"quantity":    params["quantity"],
-		"price":       params["price"],
-		"timestamp":   params["timestamp"],
-		"signature":   signature,
-	}
+	// URL에 query string 추가
+	requestURL := mw.url + "?" + queryParams.Encode()
 
-	jsonBody, err := json.Marshal(requestBody)
-	if err != nil {
-		mw.storage.AddLog("error", fmt.Sprintf("JSON 변환 실패: %v", err), mw.config.Exchange, mw.config.Symbol)
-		return
-	}
-
-	req, err := http.NewRequest("POST", mw.url, bytes.NewReader(jsonBody))
+	req, err := http.NewRequest("POST", requestURL, nil)
 	if err != nil {
 		mw.storage.AddLog("error", fmt.Sprintf("HTTP 요청 생성 실패: %v", err), mw.config.Exchange, mw.config.Symbol)
 		return
 	}
 
 	req.Header.Set("X-MEXC-APIKEY", mw.accessKey)
-	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -196,19 +192,23 @@ func (mw *MexcWorker) executeSellOrder() {
 
 // createMexcSignature MEXC HMAC-SHA256 서명 생성
 func (mw *MexcWorker) createMexcSignature(params map[string]string) string {
+	// MEXC API 스펙에 따라 키를 정렬하고 query string 생성
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	
 	var queryString strings.Builder
-	first := true
-	for key, value := range params {
-		if !first {
+	for i, key := range keys {
+		if i > 0 {
 			queryString.WriteString("&")
-		} else {
-			first = false
 		}
 		queryString.WriteString(key)
 		queryString.WriteString("=")
-		queryString.WriteString(value)
+		queryString.WriteString(params[key])
 	}
-
+	// HMAC-SHA256 서명 생성
 	h := hmac.New(sha256.New, []byte(mw.secretKey))
 	h.Write([]byte(queryString.String()))
 	return hex.EncodeToString(h.Sum(nil))
