@@ -61,7 +61,7 @@ BitBit Bot - Windows 실행파일
 
 파일 구성:
 - bitbit-app.exe: 메인 실행 파일 (소리 파일 포함)
-- 실행.bat: 실행을 위한 배치 파일
+- run.bat: 실행을 위한 배치 파일
 - README.txt: 이 파일
 
 사용법:
@@ -76,11 +76,20 @@ BitBit Bot - Windows 실행파일
 - 실행이 안 될 경우 우클릭 > "관리자 권한으로 실행"을 시도해보세요
 - 소리 파일은 실행파일에 포함되어 있어 별도 파일이 필요하지 않습니다
 
+바이러스 백신 오탐지 해결 방법:
+1. Windows Defender에서 예외 추가:
+   - Windows 보안 > 바이러스 및 위협 방지 > 설정 관리
+   - 제외 항목 추가 > 파일 > bitbit-app.exe 선택
+2. 다른 백신 프로그램 사용 시:
+   - 해당 프로그램의 예외 목록에 bitbit-app.exe 추가
+3. 임시 해결책:
+   - 백신 프로그램을 일시적으로 비활성화 후 실행
+
 문제가 발생하면 개발자에게 문의하세요.
 EOF
 
 # 실행 배치 파일 생성 (Windows용)
-cat > "$DEPLOY_DIR/실행.bat" << EOF
+cat > "$DEPLOY_DIR/run.bat" << EOF
 @echo off
 echo BitBit Bot을 시작합니다...
 start bitbit-app.exe

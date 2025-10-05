@@ -8,7 +8,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +39,7 @@ func NewHuobiWorker(config *WorkerConfig, storage *MemoryStorage) *HuobiWorker {
 		stopCh:    make(chan struct{}),
 		accessKey: config.AccessKey,
 		secretKey: config.SecretKey,
-		url:       "https://api.huobi.pro/v1/order/orders/place",
+		url:       "https://api.huobi.pro",
 	}
 }
 
@@ -44,7 +48,6 @@ func (hw *HuobiWorker) Start(ctx context.Context) {
 	hw.mu.Lock()
 	hw.running = true
 	hw.mu.Unlock()
-	
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(hw.config.RequestInterval * 1000)
@@ -97,7 +100,7 @@ func (hw *HuobiWorker) Start(ctx context.Context) {
 func (hw *HuobiWorker) Stop() {
 	hw.mu.Lock()
 	defer hw.mu.Unlock()
-	
+
 	if hw.running {
 		hw.running = false
 		close(hw.stopCh)
@@ -121,226 +124,208 @@ func (hw *HuobiWorker) executeSellOrder() {
 	}
 	hw.mu.RUnlock()
 
-	// 먼저 잔고 확인
-	balance, err := hw.getBalance()
-	if err != nil {
-		hw.storage.AddLog("error", fmt.Sprintf("잔고 조회 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
-		return
-	}
+	hw.storage.AddLog("debug", "매도 주문 시작", hw.config.Exchange, hw.config.Symbol)
 
-	// 매도할 수량이 충분한지 확인
-	if balance < hw.config.SellAmount {
-		hw.storage.AddLog("warning", fmt.Sprintf("잔고 부족: 보유량=%.8f, 매도량=%.8f", balance, hw.config.SellAmount), hw.config.Exchange, hw.config.Symbol)
-		return
-	}
-
-	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05")
-
-	// 실제 계정 ID 조회
-	accountID, err := hw.getAccountID()
+	// Spot 계정 ID 조회
+	accountID, err := hw.getSpotAccountID()
 	if err != nil {
 		hw.storage.AddLog("error", fmt.Sprintf("계정 ID 조회 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
 		return
 	}
 
-	requestBody := map[string]interface{}{
-		"account-id": accountID, // 실제 계정 ID 사용
-		"symbol":     strings.ToLower(strings.ReplaceAll(hw.config.Symbol, "/", "")),
-		"type":       "sell-limit",
-		"amount":     fmt.Sprintf("%.8f", hw.config.SellAmount),
-		"price":      fmt.Sprintf("%.8f", hw.config.SellPrice),
+	// 가격과 수량 포맷팅
+	formattedPrice := hw.formatPrice(hw.config.SellPrice)
+	formattedAmount := hw.formatAmount(hw.config.SellAmount)
+	hw.storage.AddLog("debug", fmt.Sprintf("원본 가격: %.8f, 포맷팅된 가격: %s", hw.config.SellPrice, formattedPrice), hw.config.Exchange, hw.config.Symbol)
+	hw.storage.AddLog("debug", fmt.Sprintf("원본 수량: %.8f, 포맷팅된 수량: %s", hw.config.SellAmount, formattedAmount), hw.config.Exchange, hw.config.Symbol)
+
+	// 주문 요청 본문 생성
+	orderBody := map[string]interface{}{
+		"account-id":      accountID,
+		"symbol":          strings.ToLower(strings.ReplaceAll(hw.config.Symbol, "/", "")),
+		"type":            "sell-limit",
+		"source":          "spot-api",
+		"amount":          formattedAmount, // 수량 포맷팅 함수 사용
+		"price":           formattedPrice,  // 가격 포맷팅 함수 사용
+		"client-order-id": fmt.Sprintf("huobi-sell-%d", time.Now().UnixNano()),
 	}
 
-	jsonBody, err := json.Marshal(requestBody)
+	// API 호출
+	result, err := hw.callAPI("POST", "/v1/order/orders/place", orderBody)
 	if err != nil {
-		hw.storage.AddLog("error", fmt.Sprintf("JSON 변환 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
+		hw.storage.AddLog("error", fmt.Sprintf("매도 주문 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
 		return
 	}
 
-	// 서명 생성
-	signature := hw.createHuobiSignature(string(jsonBody), timestamp)
-
-	req, err := http.NewRequest("POST", hw.url, bytes.NewReader(jsonBody))
-	if err != nil {
-		hw.storage.AddLog("error", fmt.Sprintf("HTTP 요청 생성 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("AccessKeyId", hw.accessKey)
-	req.Header.Set("SignatureMethod", "HmacSHA256")
-	req.Header.Set("SignatureVersion", "2")
-	req.Header.Set("Timestamp", timestamp)
-	req.Header.Set("Signature", signature)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		hw.storage.AddLog("error", fmt.Sprintf("HTTP 요청 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
-		return
-	}
-	defer resp.Body.Close()
-
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		hw.storage.AddLog("error", fmt.Sprintf("응답 파싱 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
-		return
-	}
-
-	if resp.StatusCode == 200 {
-		orderID, ok := result["data"].(string)
-		if ok && orderID != "" {
-			hw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.8f",
-				orderID, hw.config.SellPrice, hw.config.SellAmount), hw.config.Exchange, hw.config.Symbol)
-		} else {
-			hw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
-				hw.config.SellPrice, hw.config.SellAmount), hw.config.Exchange, hw.config.Symbol)
-		}
+	// 주문 성공 처리
+	if orderID, ok := result["data"].(string); ok {
+		hw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.8f",
+			orderID, hw.config.SellPrice, hw.config.SellAmount), hw.config.Exchange, hw.config.Symbol)
 	} else {
-		errorMsg := "알 수 없는 오류"
-		if result["err-msg"] != nil {
-			errorMsg = fmt.Sprintf("%v", result["err-msg"])
-		}
-		hw.storage.AddLog("error", fmt.Sprintf("후오비 API 오류: %s", errorMsg), hw.config.Exchange, hw.config.Symbol)
+		hw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
+			hw.config.SellPrice, hw.config.SellAmount), hw.config.Exchange, hw.config.Symbol)
 	}
 }
 
-// getBalance 후오비에서 잔고 조회
-func (hw *HuobiWorker) getBalance() (float64, error) {
-	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05")
-	
-	// 심볼에서 기본 통화 추출 (예: BTC/USDT -> BTC)
-	parts := strings.Split(hw.config.Symbol, "/")
-	if len(parts) != 2 {
-		return 0, fmt.Errorf("잘못된 심볼 형식: %s", hw.config.Symbol)
+// createSignature API 호출 시 필요한 서명(Signature)을 생성하는 함수
+func (hw *HuobiWorker) createSignature(method, path string, params map[string]string) string {
+	// 1. 쿼리 파라미터 정렬 및 문자열 생성
+	var keys []string
+	for k := range params {
+		keys = append(keys, k)
 	}
-	baseCurrency := strings.ToLower(parts[0]) // btc
-	
-	// 잔고 조회 요청
-	balanceURL := "https://api.huobi.pro/v1/account/accounts/balance"
-	req, err := http.NewRequest("GET", balanceURL, nil)
+	sort.Strings(keys)
+
+	var queryParams string
+	for _, k := range keys {
+		// URL 인코딩은 Go의 url.Values를 사용하여 처리
+		queryParams += k + "=" + url.QueryEscape(params[k]) + "&"
+	}
+	queryParams = strings.TrimSuffix(queryParams, "&")
+
+	// 2. 서명 문자열 생성
+	// GET\nHost\nPath\nQueryString
+	stringToSign := fmt.Sprintf("%s\napi.huobi.pro\n%s\n%s", method, path, queryParams)
+
+	// 3. HMAC-SHA256 서명 생성
+	mac := hmac.New(sha256.New, []byte(hw.secretKey))
+	mac.Write([]byte(stringToSign))
+	signature := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+	return signature
+}
+
+// callAPI HTX API를 호출하는 일반 함수
+func (hw *HuobiWorker) callAPI(method, path string, body map[string]interface{}) (map[string]interface{}, error) {
+	// 쿼리 파라미터 준비
+	params := map[string]string{
+		"AccessKeyId":      hw.accessKey,
+		"SignatureMethod":  "HmacSHA256",
+		"SignatureVersion": "2",
+		"Timestamp":        time.Now().UTC().Format("2006-01-02T15:04:05"), // ISO 8601 형식
+	}
+
+	// 서명 생성
+	signature := hw.createSignature(method, path, params)
+	params["Signature"] = signature
+
+	// 요청 URL 생성
+	reqURL := fmt.Sprintf("%s%s", hw.url, path)
+
+	// 최종 쿼리 문자열 생성
+	var finalQuery string
+	for k, v := range params {
+		finalQuery += k + "=" + url.QueryEscape(v) + "&"
+	}
+	finalQuery = strings.TrimSuffix(finalQuery, "&")
+	fullURL := reqURL + "?" + finalQuery
+
+	// 디버그 로그
+	hw.storage.AddLog("debug", fmt.Sprintf("API 요청: %s %s", method, fullURL), hw.config.Exchange, hw.config.Symbol)
+	if body != nil {
+		bodyJSON, _ := json.Marshal(body)
+		hw.storage.AddLog("debug", "요청 본문: "+string(bodyJSON), hw.config.Exchange, hw.config.Symbol)
+	}
+
+	// HTTP 요청 생성
+	var req *http.Request
+	var err error
+
+	if method == "POST" && body != nil {
+		jsonBody, _ := json.Marshal(body)
+		req, err = http.NewRequest(method, fullURL, bytes.NewBuffer(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req, err = http.NewRequest(method, fullURL, nil)
+	}
+
 	if err != nil {
-		return 0, err
+		return nil, fmt.Errorf("HTTP 요청 생성 실패: %v", err)
 	}
-	
-	// 서명 생성 (GET 요청용)
-	message := "GET\napi.huobi.pro\n/v1/account/accounts/balance\n"
-	h := hmac.New(sha256.New, []byte(hw.secretKey))
-	h.Write([]byte(message))
-	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
-	
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("AccessKeyId", hw.accessKey)
-	req.Header.Set("SignatureMethod", "HmacSHA256")
-	req.Header.Set("SignatureVersion", "2")
-	req.Header.Set("Timestamp", timestamp)
-	req.Header.Set("Signature", signature)
-	
+
+	// API 호출 및 응답 처리
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, err
+		return nil, fmt.Errorf("API 호출 실패: %v", err)
 	}
 	defer resp.Body.Close()
-	
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("응답 본문 읽기 실패: %v", err)
+	}
+
+	// 디버그 로그 - 응답
+	hw.storage.AddLog("debug", fmt.Sprintf("API 응답 상태: %d", resp.StatusCode), hw.config.Exchange, hw.config.Symbol)
+	hw.storage.AddLog("debug", "API 응답 본문: "+string(respBody), hw.config.Exchange, hw.config.Symbol)
+
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, err
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("응답 JSON 파싱 실패: %v", err)
 	}
-	
-	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("잔고 조회 실패: %v", result)
+
+	if status, ok := result["status"]; ok && status != "ok" {
+		return nil, fmt.Errorf("API 오류: %v (코드: %v)", result["err-msg"], result["err-code"])
 	}
-	
-	// 잔고 데이터 파싱
-	if data, ok := result["data"].([]interface{}); ok && len(data) > 0 {
-		if account, ok := data[0].(map[string]interface{}); ok {
-			if list, ok := account["list"].([]interface{}); ok {
-				for _, item := range list {
-					if balance, ok := item.(map[string]interface{}); ok {
-						if currency, ok := balance["currency"].(string); ok && currency == baseCurrency {
-							if type_, ok := balance["type"].(string); ok && type_ == "trade" {
-								if balanceStr, ok := balance["balance"].(string); ok {
-									var balance float64
-									if _, err := fmt.Sscanf(balanceStr, "%f", &balance); err == nil {
-										return balance, nil
-									}
-								}
-							}
-						}
-					}
+
+	return result, nil
+}
+
+// getSpotAccountID Spot Account ID 조회
+func (hw *HuobiWorker) getSpotAccountID() (string, error) {
+	hw.storage.AddLog("debug", "Spot Account ID 조회 중...", hw.config.Exchange, hw.config.Symbol)
+	result, err := hw.callAPI("GET", "/v1/account/accounts", nil)
+	if err != nil {
+		return "", err
+	}
+
+	// 응답에서 Spot 계정 ID 찾기
+	if data, ok := result["data"].([]interface{}); ok {
+		for _, item := range data {
+			account := item.(map[string]interface{})
+			if accountType, ok := account["type"].(string); ok && accountType == "spot" {
+				if id, ok := account["id"].(float64); ok {
+					accountID := strconv.FormatFloat(id, 'f', 0, 64)
+					hw.storage.AddLog("debug", fmt.Sprintf("Spot Account ID 찾음: %s", accountID), hw.config.Exchange, hw.config.Symbol)
+					return accountID, nil
 				}
 			}
 		}
 	}
-	
-	return 0, fmt.Errorf("잔고 정보를 찾을 수 없습니다")
+	return "", fmt.Errorf("spot 계정 ID를 찾을 수 없습니다. API 권한을 확인하세요")
 }
 
-// getAccountID 후오비에서 계정 ID 조회
-func (hw *HuobiWorker) getAccountID() (string, error) {
-	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05")
-	
-	// 계정 조회 요청
-	accountURL := "https://api.huobi.pro/v1/account/accounts"
-	req, err := http.NewRequest("GET", accountURL, nil)
-	if err != nil {
-		return "", err
+// formatPrice 가격을 후오비 API 형식에 맞게 포맷팅
+func (hw *HuobiWorker) formatPrice(price float64) string {
+	// 6자리로 자르기 (8자리 입력 시 마지막 2자리 제거)
+	formatted := fmt.Sprintf("%.6f", price)
+
+	// 소수점 이하 부분만 추출
+	parts := strings.Split(formatted, ".")
+	if len(parts) != 2 {
+		return formatted
 	}
-	
-	// 서명 생성 (GET 요청용)
-	message := "GET\napi.huobi.pro\n/v1/account/accounts\n"
-	h := hmac.New(sha256.New, []byte(hw.secretKey))
-	h.Write([]byte(message))
-	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
-	
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("AccessKeyId", hw.accessKey)
-	req.Header.Set("SignatureMethod", "HmacSHA256")
-	req.Header.Set("SignatureVersion", "2")
-	req.Header.Set("Timestamp", timestamp)
-	req.Header.Set("Signature", signature)
-	
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
+
+	integerPart := parts[0]
+	decimalPart := parts[1]
+
+	// 소수점 이하가 2자리보다 적으면 2자리까지 채우기
+	if len(decimalPart) < 2 {
+		decimalPart = decimalPart + strings.Repeat("0", 2-len(decimalPart))
 	}
-	defer resp.Body.Close()
-	
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("계정 조회 실패: %v", result)
-	}
-	
-	// 계정 데이터 파싱 (첫 번째 계정의 ID 반환)
-	if data, ok := result["data"].([]interface{}); ok && len(data) > 0 {
-		if account, ok := data[0].(map[string]interface{}); ok {
-			if id, ok := account["id"].(float64); ok {
-				return fmt.Sprintf("%.0f", id), nil
-			}
-		}
-	}
-	
-	return "", fmt.Errorf("계정 ID를 찾을 수 없습니다")
+
+	// 최소 소수점 둘째자리까지는 항상 표시
+	result := integerPart + "." + decimalPart
+
+	return result
 }
 
-// createHuobiSignature 후오비 HMAC-SHA256 서명 생성
-func (hw *HuobiWorker) createHuobiSignature(body string, timestamp string) string {
-	message := "POST\napi.huobi.pro\n/v1/order/orders/place\n" + body
-	h := hmac.New(sha256.New, []byte(hw.secretKey))
-	h.Write([]byte(message))
-	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+// formatAmount 수량을 후오비 API 형식에 맞게 포맷팅 (소수점 2자리까지만)
+func (hw *HuobiWorker) formatAmount(amount float64) string {
+	// 소수점 2자리로 자르기
+	formatted := fmt.Sprintf("%.2f", amount)
+	return formatted
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다
