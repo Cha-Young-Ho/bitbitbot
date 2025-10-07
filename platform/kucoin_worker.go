@@ -17,14 +17,15 @@ import (
 
 // KuCoinWorker 쿠코인 거래소 워커
 type KuCoinWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	url       string
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	url                string
+	lastSuccessOrderID string
 }
 
 // NewKuCoinWorker 새로운 쿠코인 워커를 생성합니다
@@ -45,7 +46,6 @@ func (kcw *KuCoinWorker) Start(ctx context.Context) {
 	kcw.mu.Lock()
 	kcw.running = true
 	kcw.mu.Unlock()
-	
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(kcw.config.RequestInterval * 1000)
@@ -98,7 +98,7 @@ func (kcw *KuCoinWorker) Start(ctx context.Context) {
 func (kcw *KuCoinWorker) Stop() {
 	kcw.mu.Lock()
 	defer kcw.mu.Unlock()
-	
+
 	if kcw.running {
 		kcw.running = false
 		close(kcw.stopCh)
@@ -168,21 +168,39 @@ func (kcw *KuCoinWorker) executeSellOrder() {
 		return
 	}
 
-	if resp.StatusCode == 200 {
-		orderID, ok := result["orderId"].(string)
-		if ok && orderID != "" {
-			kcw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.8f",
-				orderID, kcw.config.SellPrice, kcw.config.SellAmount), kcw.config.Exchange, kcw.config.Symbol)
+	// 디버그 로그: 응답 상태와 내용 출력
+	fmt.Printf("[DEBUG] 쿠코인 응답 상태: %d\n", resp.StatusCode)
+	fmt.Printf("[DEBUG] 쿠코인 응답 내용: %+v\n", result)
+	fmt.Printf("[DEBUG] 쿠코인 응답 내용: %+v\n", result["code"])
+	fmt.Printf("[DEBUG] 쿠코인 응답 내용: %+v\n", result["msg"])
+
+	// KuCoin API는 HTTP 200으로 응답하지만 code 필드로 실제 성공/실패를 알려줌
+	code, ok := result["code"].(string)
+	if !ok {
+		codeFloat, ok := result["code"].(float64)
+		if ok {
+			code = fmt.Sprintf("%.0f", codeFloat)
+		}
+	}
+	fmt.Printf("code: %s\n", code)
+	fmt.Printf("비교: %+v\n", code == "200000")
+	if resp.StatusCode == 200 && code == "200000" {
+		kcw.mu.Lock()
+		if kcw.lastSuccessOrderID == "" {
+			kcw.lastSuccessOrderID = "success"
+			kcw.mu.Unlock()
+			kcw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+				kcw.GetPlatformName(), kcw.config.SellAmount, kcw.config.SellPrice, kcw.config.Symbol), kcw.config.Exchange, kcw.config.Symbol)
 		} else {
-			kcw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
-				kcw.config.SellPrice, kcw.config.SellAmount), kcw.config.Exchange, kcw.config.Symbol)
+			kcw.mu.Unlock()
 		}
 	} else {
 		errorMsg := "알 수 없는 오류"
 		if result["msg"] != nil {
 			errorMsg = fmt.Sprintf("%v", result["msg"])
 		}
-		kcw.storage.AddLog("error", fmt.Sprintf("쿠코인 API 오류: %s", errorMsg), kcw.config.Exchange, kcw.config.Symbol)
+		fmt.Printf("[DEBUG] 쿠코인 API 오류 (code: %s): %s\n", code, errorMsg)
+		kcw.storage.AddLog("error", fmt.Sprintf("쿠코인 API 오류 (code: %s): %s", code, errorMsg), kcw.config.Exchange, kcw.config.Symbol)
 	}
 }
 

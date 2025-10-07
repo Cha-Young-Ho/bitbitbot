@@ -40,8 +40,8 @@ fi
 
 echo "Windows 빌드 완료: build/bin/bitbit-app.exe"
 
-# 친구용 배포 패키지 생성
-echo "친구용 배포 패키지 생성 중..."
+# 배포 패키지 생성
+echo "배포 패키지 생성 중..."
 
 # 배포 디렉토리 생성
 DEPLOY_DIR="build/bitbit-app-windows-${VERSION}"
@@ -97,16 +97,16 @@ echo 프로그램이 백그라운드에서 실행됩니다.
 pause
 EOF
 
-# 친구용 ZIP 파일 생성
+# ZIP 파일 생성
 cd build
 zip -r "bitbit-app-windows-${VERSION}.zip" "bitbit-app-windows-${VERSION}"
 cd ..
 
-echo "친구용 배포 패키지 생성 완료!"
+echo "배포 패키지 생성 완료!"
 echo "배포 디렉토리: $DEPLOY_DIR"
 echo "ZIP 파일: build/bitbit-app-windows-${VERSION}.zip"
 echo ""
-echo "친구에게 전달할 파일: build/bitbit-app-windows-${VERSION}.zip"
+echo "배포 파일: build/bitbit-app-windows-${VERSION}.zip"
 echo "압축을 풀면 바로 실행할 수 있습니다!"
 
 echo "Windows 빌드 완료!"

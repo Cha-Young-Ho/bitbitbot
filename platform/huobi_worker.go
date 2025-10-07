@@ -124,8 +124,6 @@ func (hw *HuobiWorker) executeSellOrder() {
 	}
 	hw.mu.RUnlock()
 
-	hw.storage.AddLog("debug", "매도 주문 시작", hw.config.Exchange, hw.config.Symbol)
-
 	// Spot 계정 ID 조회
 	accountID, err := hw.getSpotAccountID()
 	if err != nil {
@@ -136,8 +134,6 @@ func (hw *HuobiWorker) executeSellOrder() {
 	// 가격과 수량 포맷팅
 	formattedPrice := hw.formatPrice(hw.config.SellPrice)
 	formattedAmount := hw.formatAmount(hw.config.SellAmount)
-	hw.storage.AddLog("debug", fmt.Sprintf("원본 가격: %.8f, 포맷팅된 가격: %s", hw.config.SellPrice, formattedPrice), hw.config.Exchange, hw.config.Symbol)
-	hw.storage.AddLog("debug", fmt.Sprintf("원본 수량: %.8f, 포맷팅된 수량: %s", hw.config.SellAmount, formattedAmount), hw.config.Exchange, hw.config.Symbol)
 
 	// 주문 요청 본문 생성
 	orderBody := map[string]interface{}{
@@ -220,13 +216,6 @@ func (hw *HuobiWorker) callAPI(method, path string, body map[string]interface{})
 	finalQuery = strings.TrimSuffix(finalQuery, "&")
 	fullURL := reqURL + "?" + finalQuery
 
-	// 디버그 로그
-	hw.storage.AddLog("debug", fmt.Sprintf("API 요청: %s %s", method, fullURL), hw.config.Exchange, hw.config.Symbol)
-	if body != nil {
-		bodyJSON, _ := json.Marshal(body)
-		hw.storage.AddLog("debug", "요청 본문: "+string(bodyJSON), hw.config.Exchange, hw.config.Symbol)
-	}
-
 	// HTTP 요청 생성
 	var req *http.Request
 	var err error
@@ -256,10 +245,6 @@ func (hw *HuobiWorker) callAPI(method, path string, body map[string]interface{})
 		return nil, fmt.Errorf("응답 본문 읽기 실패: %v", err)
 	}
 
-	// 디버그 로그 - 응답
-	hw.storage.AddLog("debug", fmt.Sprintf("API 응답 상태: %d", resp.StatusCode), hw.config.Exchange, hw.config.Symbol)
-	hw.storage.AddLog("debug", "API 응답 본문: "+string(respBody), hw.config.Exchange, hw.config.Symbol)
-
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("응답 JSON 파싱 실패: %v", err)
@@ -274,7 +259,6 @@ func (hw *HuobiWorker) callAPI(method, path string, body map[string]interface{})
 
 // getSpotAccountID Spot Account ID 조회
 func (hw *HuobiWorker) getSpotAccountID() (string, error) {
-	hw.storage.AddLog("debug", "Spot Account ID 조회 중...", hw.config.Exchange, hw.config.Symbol)
 	result, err := hw.callAPI("GET", "/v1/account/accounts", nil)
 	if err != nil {
 		return "", err
@@ -287,7 +271,6 @@ func (hw *HuobiWorker) getSpotAccountID() (string, error) {
 			if accountType, ok := account["type"].(string); ok && accountType == "spot" {
 				if id, ok := account["id"].(float64); ok {
 					accountID := strconv.FormatFloat(id, 'f', 0, 64)
-					hw.storage.AddLog("debug", fmt.Sprintf("Spot Account ID 찾음: %s", accountID), hw.config.Exchange, hw.config.Symbol)
 					return accountID, nil
 				}
 			}

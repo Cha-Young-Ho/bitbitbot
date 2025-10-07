@@ -1050,10 +1050,6 @@
 
         // 키 삭제
         async function deleteKey(keyId) {
-            if (!confirm('정말로 이 키를 삭제하시겠습니까?')) {
-                return;
-            }
-
             try {
                 const result = await window.go.main.App.DeleteExchangeKey(keyId);
                 if (result.success) {
