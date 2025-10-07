@@ -17,14 +17,15 @@ import (
 
 // BinanceWorker 바이낸스 거래소 워커
 type BinanceWorker struct {
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	url       string
-	mu        sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	url                string
+	mu                 sync.RWMutex
+	lastSuccessOrderID string
 }
 
 // NewBinanceWorker 새로운 바이낸스 워커를 생성합니다
@@ -45,7 +46,6 @@ func (bw *BinanceWorker) Start(ctx context.Context) {
 	bw.mu.Lock()
 	bw.running = true
 	bw.mu.Unlock()
-	
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(bw.config.RequestInterval * 1000)
@@ -98,7 +98,7 @@ func (bw *BinanceWorker) Start(ctx context.Context) {
 func (bw *BinanceWorker) Stop() {
 	bw.mu.Lock()
 	defer bw.mu.Unlock()
-	
+
 	if bw.running {
 		bw.running = false
 		close(bw.stopCh)
@@ -163,18 +163,34 @@ func (bw *BinanceWorker) executeSellOrder() {
 	if resp.StatusCode == 200 {
 		orderID, ok := result["orderId"].(float64)
 		if ok {
-			bw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%.0f, 가격=%.2f, 수량=%.8f",
-				orderID, bw.config.SellPrice, bw.config.SellAmount), bw.config.Exchange, bw.config.Symbol)
+			orderIDStr := fmt.Sprintf("%.0f", orderID)
+			bw.mu.Lock()
+			if bw.lastSuccessOrderID != orderIDStr {
+				bw.lastSuccessOrderID = orderIDStr
+				bw.mu.Unlock()
+				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+					bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+			} else {
+				bw.mu.Unlock()
+			}
 		} else {
-			bw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
-				bw.config.SellPrice, bw.config.SellAmount), bw.config.Exchange, bw.config.Symbol)
+			bw.mu.Lock()
+			if bw.lastSuccessOrderID != "success" {
+				bw.lastSuccessOrderID = "success"
+				bw.mu.Unlock()
+				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+					bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+			} else {
+				bw.mu.Unlock()
+			}
 		}
 	} else {
 		errorMsg := "알 수 없는 오류"
 		if result["msg"] != nil {
 			errorMsg = fmt.Sprintf("%v", result["msg"])
 		}
-		bw.storage.AddLog("error", fmt.Sprintf("바이낸스 API 오류: %s", errorMsg), bw.config.Exchange, bw.config.Symbol)
+		bw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %s",
+			bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol, errorMsg), bw.config.Exchange, bw.config.Symbol)
 	}
 }
 

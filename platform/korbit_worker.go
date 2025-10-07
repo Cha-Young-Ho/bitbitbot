@@ -17,14 +17,15 @@ import (
 
 // KorbitWorker 코빗 거래소 워커
 type KorbitWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	url       string
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	url                string
+	lastSuccessOrderID string
 }
 
 // NewKorbitWorker 새로운 코빗 워커를 생성합니다
@@ -45,7 +46,6 @@ func (kw *KorbitWorker) Start(ctx context.Context) {
 	kw.mu.Lock()
 	kw.running = true
 	kw.mu.Unlock()
-	
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(kw.config.RequestInterval * 1000)
@@ -98,7 +98,7 @@ func (kw *KorbitWorker) Start(ctx context.Context) {
 func (kw *KorbitWorker) Stop() {
 	kw.mu.Lock()
 	defer kw.mu.Unlock()
-	
+
 	if kw.running {
 		kw.running = false
 		close(kw.stopCh)

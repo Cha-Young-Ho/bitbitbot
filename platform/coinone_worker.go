@@ -19,14 +19,15 @@ import (
 
 // CoinoneWorker 코인원 거래소 워커
 type CoinoneWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	url       string
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	url                string
+	lastSuccessOrderID string
 }
 
 // NewCoinoneWorker 새로운 코인원 워커를 생성합니다
@@ -47,7 +48,7 @@ func (cw *CoinoneWorker) Start(ctx context.Context) {
 	cw.mu.Lock()
 	cw.running = true
 	cw.mu.Unlock()
-	
+
 	cw.storage.AddLog("info", "코인원 워커가 시작되었습니다.", cw.config.Exchange, cw.config.Symbol)
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -101,7 +102,7 @@ func (cw *CoinoneWorker) Start(ctx context.Context) {
 func (cw *CoinoneWorker) Stop() {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
-	
+
 	if cw.running {
 		cw.running = false
 		// 채널이 이미 닫혀있지 않은 경우에만 닫기
@@ -120,7 +121,6 @@ func (cw *CoinoneWorker) IsRunning() bool {
 	defer cw.mu.RUnlock()
 	return cw.running
 }
-
 
 // executeSellOrder 코인원에서 매도 주문 실행
 func (cw *CoinoneWorker) executeSellOrder() {
@@ -158,7 +158,7 @@ func (cw *CoinoneWorker) createCoinoneOrderV21(coinoneSymbol string) (string, er
 		"side":            "SELL", // 매도
 		"quote_currency":  "KRW",
 		"target_currency": coinoneSymbol,
-		"type":            "LIMIT", // 지정가
+		"type":            "LIMIT",                                  // 지정가
 		"price":           fmt.Sprintf("%.8f", cw.config.SellPrice), // 소수점 8자리까지 유지
 		"qty":             fmt.Sprintf("%.8f", cw.config.SellAmount),
 		"post_only":       false, // Maker/Taker 모두 허용 (매수벽에 걸려도 체결 가능)
@@ -260,4 +260,3 @@ func (cw *CoinoneWorker) convertToCoinoneSymbol(symbol string) string {
 func (cw *CoinoneWorker) GetPlatformName() string {
 	return "Coinone"
 }
-

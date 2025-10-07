@@ -18,20 +18,21 @@ import (
 
 // GateWorker Gate.io 거래소 워커 (APIv4 직접 구현)
 type GateWorker struct {
-	mu        sync.RWMutex
-	config  *WorkerConfig
-	storage *MemoryStorage
-	running bool
-	stopCh  chan struct{}
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	lastSuccessOrderID string
 }
 
 // NewGateWorker 새로운 Gate.io 워커를 생성합니다
 func NewGateWorker(config *WorkerConfig, storage *MemoryStorage) *GateWorker {
 	return &GateWorker{
-		config:   config,
-		storage:  storage,
-		running:  false,
-		stopCh:   make(chan struct{}),
+		config:  config,
+		storage: storage,
+		running: false,
+		stopCh:  make(chan struct{}),
 	}
 }
 
@@ -45,7 +46,6 @@ func (gw *GateWorker) Start(ctx context.Context) {
 
 	gw.running = true
 	gw.mu.Unlock()
-	
 
 	// 주기적으로 매도 주문 실행
 	go func() {
@@ -85,7 +85,7 @@ func (gw *GateWorker) Start(ctx context.Context) {
 func (gw *GateWorker) Stop() {
 	gw.mu.Lock()
 	defer gw.mu.Unlock()
-	
+
 	if !gw.running {
 		return
 	}
@@ -126,7 +126,7 @@ func (gw *GateWorker) executeSellOrder() {
 
 	// APIv4 직접 구현으로 매도 주문 실행
 	result := gw.executeGateAPISellOrder()
-	
+
 	if result.Success {
 		gw.storage.AddLog("success", fmt.Sprintf("Gate.io APIv4 매도 주문 성공: 주문번호=%s, 가격=%.8f, 수량=%.8f, 통화쌍=%s",
 			result.OrderID, gw.config.SellPrice, gw.config.SellAmount, currencyPair), gw.config.Exchange, gw.config.Symbol)
@@ -163,12 +163,12 @@ func (gw *GateWorker) executeGateAPISellOrder() OrderResult {
 	// APIv4 서명 문자열 생성
 	// Request Method + "\n" + Request URL + "\n" + Query String + "\n" + HexEncode(SHA512(Request Payload)) + "\n" + Timestamp
 	queryString := "" // 쿼리 파라미터 없음
-	
+
 	// SHA512로 요청 바디 해시
 	payloadHash := sha512.Sum512(jsonBody)
 	payloadHashHex := hex.EncodeToString(payloadHash[:])
-	
-	signatureString := fmt.Sprintf("POST\n/api/v4/spot/orders\n%s\n%s\n%d", 
+
+	signatureString := fmt.Sprintf("POST\n/api/v4/spot/orders\n%s\n%s\n%d",
 		queryString, payloadHashHex, timestamp)
 
 	// HMAC-SHA512 서명 생성
@@ -215,11 +215,11 @@ func (gw *GateWorker) executeGateAPISellOrder() OrderResult {
 		}
 
 		return OrderResult{
-			Success:     true,
-			OrderID:     orderID,
-			Price:       gw.config.SellPrice,
-			Amount:      gw.config.SellAmount,
-			TotalAmount: gw.config.SellAmount * gw.config.SellPrice,
+			Success:      true,
+			OrderID:      orderID,
+			Price:        gw.config.SellPrice,
+			Amount:       gw.config.SellAmount,
+			TotalAmount:  gw.config.SellAmount * gw.config.SellPrice,
 			ErrorMessage: "",
 		}
 	} else {

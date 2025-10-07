@@ -20,14 +20,15 @@ import (
 
 // HuobiWorker 후오비 거래소 워커
 type HuobiWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	url       string
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	url                string
+	lastSuccessOrderID string
 }
 
 // NewHuobiWorker 새로운 후오비 워커를 생성합니다
@@ -149,17 +150,31 @@ func (hw *HuobiWorker) executeSellOrder() {
 	// API 호출
 	result, err := hw.callAPI("POST", "/v1/order/orders/place", orderBody)
 	if err != nil {
-		hw.storage.AddLog("error", fmt.Sprintf("매도 주문 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
+		hw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
+			hw.GetPlatformName(), hw.config.SellAmount, hw.config.SellPrice, hw.config.Symbol, err), hw.config.Exchange, hw.config.Symbol)
 		return
 	}
 
-	// 주문 성공 처리
+	// 주문 성공 처리 (중복 방지)
+	hw.mu.Lock()
 	if orderID, ok := result["data"].(string); ok {
-		hw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.8f",
-			orderID, hw.config.SellPrice, hw.config.SellAmount), hw.config.Exchange, hw.config.Symbol)
+		if hw.lastSuccessOrderID != orderID {
+			hw.lastSuccessOrderID = orderID
+			hw.mu.Unlock()
+			hw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+				hw.GetPlatformName(), hw.config.SellAmount, hw.config.SellPrice, hw.config.Symbol), hw.config.Exchange, hw.config.Symbol)
+		} else {
+			hw.mu.Unlock()
+		}
 	} else {
-		hw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
-			hw.config.SellPrice, hw.config.SellAmount), hw.config.Exchange, hw.config.Symbol)
+		if hw.lastSuccessOrderID != "success" {
+			hw.lastSuccessOrderID = "success"
+			hw.mu.Unlock()
+			hw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+				hw.GetPlatformName(), hw.config.SellAmount, hw.config.SellPrice, hw.config.Symbol), hw.config.Exchange, hw.config.Symbol)
+		} else {
+			hw.mu.Unlock()
+		}
 	}
 }
 

@@ -20,14 +20,15 @@ import (
 
 // UpbitWorker 업비트 거래소 워커
 type UpbitWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	url       string
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	url                string
+	lastSuccessOrderID string
 }
 
 // NewUpbitWorker 새로운 업비트 워커를 생성합니다
@@ -48,7 +49,6 @@ func (uw *UpbitWorker) Start(ctx context.Context) {
 	uw.mu.Lock()
 	uw.running = true
 	uw.mu.Unlock()
-	
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(uw.config.RequestInterval * 1000)
@@ -101,7 +101,7 @@ func (uw *UpbitWorker) Start(ctx context.Context) {
 func (uw *UpbitWorker) Stop() {
 	uw.mu.Lock()
 	defer uw.mu.Unlock()
-	
+
 	if uw.running {
 		uw.running = false
 		close(uw.stopCh)

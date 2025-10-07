@@ -12,14 +12,15 @@ import (
 
 // OKXWorker OKX 거래소 워커
 type OKXWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	exchange  ccxt.IExchange
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	exchange           ccxt.IExchange
+	lastSuccessOrderID string
 }
 
 // NewOKXWorker 새로운 OKX 워커를 생성합니다
@@ -56,7 +57,6 @@ func (ow *OKXWorker) Start(ctx context.Context) {
 	ow.mu.Lock()
 	ow.running = true
 	ow.mu.Unlock()
-	
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(ow.config.RequestInterval * 1000)
@@ -109,7 +109,7 @@ func (ow *OKXWorker) Start(ctx context.Context) {
 func (ow *OKXWorker) Stop() {
 	ow.mu.Lock()
 	defer ow.mu.Unlock()
-	
+
 	if ow.running {
 		ow.running = false
 		close(ow.stopCh)
@@ -141,7 +141,6 @@ func (ow *OKXWorker) executeSellOrder() {
 	// OKX 심볼 형식으로 변환 (예: BTC/USDT -> BTC-USDT)
 	okxSymbol := ow.convertToOKXSymbol(ow.config.Symbol)
 
-
 	// CCXT를 사용한 지정가 매도 주문
 	orderID, err := ow.exchange.CreateLimitSellOrder(
 		okxSymbol,            // 심볼 (예: BTC-USDT)
@@ -150,13 +149,21 @@ func (ow *OKXWorker) executeSellOrder() {
 	)
 
 	if err != nil {
-		ow.storage.AddLog("error", fmt.Sprintf("매도 주문 실패: %v", err), ow.config.Exchange, ow.config.Symbol)
+		ow.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
+			ow.GetPlatformName(), ow.config.SellAmount, ow.config.SellPrice, ow.config.Symbol, err), ow.config.Exchange, ow.config.Symbol)
 		return
 	}
 
-	// 성공 로그
-	ow.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		ow.config.SellPrice, ow.config.SellAmount, orderID), ow.config.Exchange, ow.config.Symbol)
+	// 성공 로그 (중복 방지)
+	ow.mu.Lock()
+	if ow.lastSuccessOrderID != orderID {
+		ow.lastSuccessOrderID = orderID
+		ow.mu.Unlock()
+		ow.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+			ow.GetPlatformName(), ow.config.SellAmount, ow.config.SellPrice, ow.config.Symbol), ow.config.Exchange, ow.config.Symbol)
+	} else {
+		ow.mu.Unlock()
+	}
 }
 
 // convertToOKXSymbol 심볼을 OKX 형식으로 변환
@@ -164,7 +171,6 @@ func (ow *OKXWorker) convertToOKXSymbol(symbol string) string {
 	// BTC/USDT -> BTC-USDT
 	// ETH/KRW -> ETH-KRW
 	okxSymbol := strings.Replace(symbol, "/", "-", -1)
-
 
 	return okxSymbol
 }

@@ -18,14 +18,15 @@ import (
 
 // MexcWorker MEXC 거래소 워커
 type MexcWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	url       string
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	url                string
+	lastSuccessOrderID string
 }
 
 // NewMexcWorker 새로운 MEXC 워커를 생성합니다
@@ -46,7 +47,6 @@ func (mw *MexcWorker) Start(ctx context.Context) {
 	mw.mu.Lock()
 	mw.running = true
 	mw.mu.Unlock()
-	
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(mw.config.RequestInterval * 1000)
@@ -99,7 +99,7 @@ func (mw *MexcWorker) Start(ctx context.Context) {
 func (mw *MexcWorker) Stop() {
 	mw.mu.Lock()
 	defer mw.mu.Unlock()
-	
+
 	if mw.running {
 		mw.running = false
 		close(mw.stopCh)
@@ -126,12 +126,12 @@ func (mw *MexcWorker) executeSellOrder() {
 	timestamp := time.Now().UnixMilli()
 
 	params := map[string]string{
-		"symbol":   strings.ReplaceAll(mw.config.Symbol, "/", ""),
-		"side":     "SELL",
-		"type":     "LIMIT",
-		"quantity": fmt.Sprintf("%.8f", mw.config.SellAmount),
-		"price":    fmt.Sprintf("%.8f", mw.config.SellPrice),
-		"timestamp":   strconv.FormatInt(timestamp, 10),
+		"symbol":    strings.ReplaceAll(mw.config.Symbol, "/", ""),
+		"side":      "SELL",
+		"type":      "LIMIT",
+		"quantity":  fmt.Sprintf("%.8f", mw.config.SellAmount),
+		"price":     fmt.Sprintf("%.8f", mw.config.SellPrice),
+		"timestamp": strconv.FormatInt(timestamp, 10),
 	}
 
 	// MEXC API는 query string 방식으로 요청해야 함
@@ -198,7 +198,7 @@ func (mw *MexcWorker) createMexcSignature(params map[string]string) string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	
+
 	var queryString strings.Builder
 	for i, key := range keys {
 		if i > 0 {

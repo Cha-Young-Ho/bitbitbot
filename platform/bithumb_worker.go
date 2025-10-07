@@ -12,20 +12,22 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
 // BithumbWorker 빗썸 거래소 워커
 type BithumbWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	url       string
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	url                string
+	lastSuccessOrderID string
 }
 
 // NewBithumbWorker 새로운 빗썸 워커를 생성합니다
@@ -48,11 +50,11 @@ func (bw *BithumbWorker) Start(ctx context.Context) {
 		bw.storage.AddLog("error", fmt.Sprintf("빗썸 설정 검증 실패: %v", err), bw.config.Exchange, bw.config.Symbol)
 		return
 	}
-	
+
 	bw.mu.Lock()
 	bw.running = true
 	bw.mu.Unlock()
-	
+
 	// 워커 시작 로그 제거
 
 	// 티커 생성 (밀리초 단위로 변환)
@@ -106,7 +108,7 @@ func (bw *BithumbWorker) Start(ctx context.Context) {
 func (bw *BithumbWorker) Stop() {
 	bw.mu.Lock()
 	defer bw.mu.Unlock()
-	
+
 	if bw.running {
 		bw.running = false
 		close(bw.stopCh)
@@ -136,8 +138,8 @@ func (bw *BithumbWorker) executeSellOrder() {
 	// 빗썸 API 2.0 파라미터 구성 (Upbit과 같은 방식)
 	params := url.Values{}
 	params.Set("market", bithumbSymbol)
-	params.Set("side", "ask") // ask = 매도, bid = 매수
-	params.Set("ord_type", "limit") // limit = 지정가 주문
+	params.Set("side", "ask")                                     // ask = 매도, bid = 매수
+	params.Set("ord_type", "limit")                               // limit = 지정가 주문
 	params.Set("price", fmt.Sprintf("%.8f", bw.config.SellPrice)) // 소수점 8자리까지 유지
 	params.Set("volume", fmt.Sprintf("%.8f", bw.config.SellAmount))
 
@@ -162,7 +164,7 @@ func (bw *BithumbWorker) executeSellOrder() {
 		bw.storage.AddLog("error", fmt.Sprintf("JSON 바디 생성 실패: %v", err), bw.config.Exchange, bw.config.Symbol)
 		return
 	}
-	
+
 	// 디버깅 로그 제거
 
 	// HTTP 요청 생성
@@ -180,9 +182,9 @@ func (bw *BithumbWorker) executeSellOrder() {
 	client := &http.Client{
 		Timeout: 15 * time.Second,
 		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  true,
+			MaxIdleConns:       10,
+			IdleConnTimeout:    30 * time.Second,
+			DisableCompression: true,
 		},
 	}
 
@@ -208,20 +210,33 @@ func (bw *BithumbWorker) executeSellOrder() {
 		if uuid, ok := result["uuid"].(string); ok && uuid != "" {
 			orderID = uuid
 		}
-		
+
 		// 전체 응답 로그 제거
-		
+
+		bw.mu.Lock()
 		if orderID != "" {
-			bw.storage.AddLog("success", fmt.Sprintf("빗썸 매도 주문 성공: 주문번호=%s, 가격=%.0f원, 수량=%.8f%s",
-				orderID, bw.config.SellPrice, bw.config.SellAmount, bithumbSymbol), bw.config.Exchange, bw.config.Symbol)
+			if bw.lastSuccessOrderID != orderID {
+				bw.lastSuccessOrderID = orderID
+				bw.mu.Unlock()
+				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+					bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+			} else {
+				bw.mu.Unlock()
+			}
 		} else {
-			bw.storage.AddLog("success", fmt.Sprintf("빗썸 매도 주문 성공: 가격=%.0f원, 수량=%.8f%s, 응답=%+v",
-				bw.config.SellPrice, bw.config.SellAmount, bithumbSymbol, result), bw.config.Exchange, bw.config.Symbol)
+			if bw.lastSuccessOrderID != "success" {
+				bw.lastSuccessOrderID = "success"
+				bw.mu.Unlock()
+				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+					bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+			} else {
+				bw.mu.Unlock()
+			}
 		}
 	} else {
 		// HTTP 오류 - 상세한 오류 정보 추출
 		errorMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
-		
+
 		// 빗썸 API 2.0 오류 응답 구조 확인
 		if errorInfo, ok := result["error"].(map[string]interface{}); ok {
 			if name, ok := errorInfo["name"].(string); ok {
@@ -233,7 +248,7 @@ func (bw *BithumbWorker) executeSellOrder() {
 		} else if message, ok := result["message"].(string); ok {
 			errorMsg = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, message)
 		}
-		
+
 		// 전체 응답 로그 제거
 		bw.storage.AddLog("error", fmt.Sprintf("빗썸 요청 실패: %s", errorMsg), bw.config.Exchange, bw.config.Symbol)
 	}
@@ -253,17 +268,17 @@ func (bw *BithumbWorker) convertToBithumbSymbol(symbol string) string {
 func (bw *BithumbWorker) createBithumbJWTToken(params url.Values) (string, error) {
 	// UUID 생성
 	nonce := uuid.New().String()
-	
+
 	// 현재 시간을 밀리초로 변환
 	timestamp := time.Now().UnixMilli()
-	
+
 	// JWT 페이로드 구성
 	payload := jwt.MapClaims{
 		"access_key": bw.accessKey,
 		"nonce":      nonce,
 		"timestamp":  timestamp,
 	}
-	
+
 	// 쿼리 파라미터가 있는 경우 query_hash 추가 (Upbit과 같은 방식)
 	if len(params) > 0 {
 		// 1) 키를 정렬
@@ -289,26 +304,26 @@ func (bw *BithumbWorker) createBithumbJWTToken(params url.Values) (string, error
 			}
 		}
 		rawQuery := b.String()
-		
+
 		// 3) SHA512 해시 생성
 		sum := sha512.Sum512([]byte(rawQuery))
 		queryHash := hex.EncodeToString(sum[:])
-		
+
 		payload["query_hash"] = queryHash
 		payload["query_hash_alg"] = "SHA512"
-		
+
 		// 디버깅 로그 제거
 	}
-	
+
 	// JWT 토큰 생성
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, payload)
 	tokenString, err := token.SignedString([]byte(bw.secretKey))
 	if err != nil {
 		return "", err
 	}
-	
+
 	// 디버깅 로그 제거
-	
+
 	return "Bearer " + tokenString, nil
 }
 
@@ -322,20 +337,20 @@ func (bw *BithumbWorker) validateBithumbConfig() error {
 	if bw.accessKey == "" || bw.secretKey == "" {
 		return fmt.Errorf("빗썸 API 키가 설정되지 않았습니다")
 	}
-	
+
 	if bw.config.SellAmount <= 0 {
 		return fmt.Errorf("매도 수량은 0보다 커야 합니다")
 	}
-	
+
 	if bw.config.SellPrice <= 0 {
 		return fmt.Errorf("매도 가격은 0보다 커야 합니다")
 	}
-	
+
 	// 빗썸 최소 주문 금액 체크 (1000원 이상)
 	if bw.config.SellPrice*bw.config.SellAmount < 1000 {
 		return fmt.Errorf("빗썸 최소 주문 금액은 1,000원 이상이어야 합니다")
 	}
-	
+
 	return nil
 }
 
@@ -343,32 +358,32 @@ func (bw *BithumbWorker) validateBithumbConfig() error {
 func (bw *BithumbWorker) getBithumbBalance() (map[string]interface{}, error) {
 	// 빗썸 API 2.0 잔고 조회 API 호출
 	balanceURL := "https://api.bithumb.com/v1/accounts"
-	
+
 	// JWT 토큰 생성 (파라미터 없음)
 	authToken, err := bw.createBithumbJWTToken(url.Values{})
 	if err != nil {
 		return nil, err
 	}
-	
+
 	req, err := http.NewRequest("GET", balanceURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	req.Header.Set("Authorization", authToken)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	
+
 	return result, nil
 }

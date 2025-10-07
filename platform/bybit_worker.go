@@ -12,14 +12,15 @@ import (
 
 // BybitWorker 바이비트 거래소 워커
 type BybitWorker struct {
-	mu        sync.RWMutex
-	config    *WorkerConfig
-	storage   *MemoryStorage
-	running   bool
-	stopCh    chan struct{}
-	accessKey string
-	secretKey string
-	exchange  ccxt.IExchange
+	mu                 sync.RWMutex
+	config             *WorkerConfig
+	storage            *MemoryStorage
+	running            bool
+	stopCh             chan struct{}
+	accessKey          string
+	secretKey          string
+	exchange           ccxt.IExchange
+	lastSuccessOrderID string
 }
 
 // NewBybitWorker 새로운 바이비트 워커를 생성합니다
@@ -56,7 +57,6 @@ func (bw *BybitWorker) Start(ctx context.Context) {
 	bw.mu.Lock()
 	bw.running = true
 	bw.mu.Unlock()
-	
 
 	// 티커 생성 (밀리초 단위로 변환)
 	intervalMs := int64(bw.config.RequestInterval * 1000)
@@ -109,7 +109,7 @@ func (bw *BybitWorker) Start(ctx context.Context) {
 func (bw *BybitWorker) Stop() {
 	bw.mu.Lock()
 	defer bw.mu.Unlock()
-	
+
 	if bw.running {
 		bw.running = false
 		close(bw.stopCh)
@@ -141,7 +141,6 @@ func (bw *BybitWorker) executeSellOrder() {
 	// 바이비트 심볼 형식으로 변환 (예: BTC/USDT -> BTC/USDT)
 	bybitSymbol := bw.convertToBybitSymbol(bw.config.Symbol)
 
-
 	// CCXT를 사용한 지정가 매도 주문
 	orderID, err := bw.exchange.CreateLimitSellOrder(
 		bybitSymbol,          // 심볼 (예: BTC/USDT)
@@ -150,13 +149,21 @@ func (bw *BybitWorker) executeSellOrder() {
 	)
 
 	if err != nil {
-		bw.storage.AddLog("error", fmt.Sprintf("매도 주문 실패: %v", err), bw.config.Exchange, bw.config.Symbol)
+		bw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
+			bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol, err), bw.config.Exchange, bw.config.Symbol)
 		return
 	}
 
-	// 성공 로그
-	bw.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		bw.config.SellPrice, bw.config.SellAmount, orderID), bw.config.Exchange, bw.config.Symbol)
+	// 성공 로그 (중복 방지)
+	bw.mu.Lock()
+	if bw.lastSuccessOrderID != orderID {
+		bw.lastSuccessOrderID = orderID
+		bw.mu.Unlock()
+		bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+			bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+	} else {
+		bw.mu.Unlock()
+	}
 }
 
 // convertToBybitSymbol 바이비트 심볼 형식으로 변환
@@ -173,7 +180,6 @@ func (bw *BybitWorker) convertToBybitSymbol(symbol string) string {
 
 	// 바이비트 마켓 형식으로 변환
 	bybitSymbol := base + "/" + quote // "BTC/USDT"
-
 
 	return bybitSymbol
 }
