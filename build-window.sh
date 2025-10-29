@@ -30,6 +30,7 @@ fi
 
 # Wails 빌드 (Windows용)
 echo "Wails 빌드 시작..."
+export PATH=$PATH:/Users/youngho/go/bin
 wails build -platform windows/amd64 -ldflags "-X main.Version=${VERSION} -X main.Environment=${ENVIRONMENT} -X main.configUrl=https://${BUCKET_NAME}.s3.ap-northeast-2.amazonaws.com/${ENVIRONMENT}/config.json"
 
 # 빌드 결과 확인

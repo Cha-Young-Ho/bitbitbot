@@ -145,7 +145,6 @@ func (gw *GateWorker) executeGateAPISellOrder() OrderResult {
 	// 심볼을 Gate.io 형식으로 변환
 	currencyPair := strings.ReplaceAll(gw.config.Symbol, "/", "_")
 
-	// 요청 바디 구성
 	requestBody := map[string]interface{}{
 		"currency_pair": currencyPair,
 		"side":          "sell",

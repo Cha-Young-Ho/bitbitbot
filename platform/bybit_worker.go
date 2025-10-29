@@ -154,16 +154,9 @@ func (bw *BybitWorker) executeSellOrder() {
 		return
 	}
 
-	// 성공 로그 (중복 방지)
-	bw.mu.Lock()
-	if bw.lastSuccessOrderID != orderID {
-		bw.lastSuccessOrderID = orderID
-		bw.mu.Unlock()
-		bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-			bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
-	} else {
-		bw.mu.Unlock()
-	}
+	// 성공 로그
+	bw.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
+		bw.config.SellPrice, bw.config.SellAmount, orderID), bw.config.Exchange, bw.config.Symbol)
 }
 
 // convertToBybitSymbol 바이비트 심볼 형식으로 변환

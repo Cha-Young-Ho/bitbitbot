@@ -18,6 +18,17 @@ import (
 	"time"
 )
 
+// SymbolInfo 심볼 정보 구조체
+type SymbolInfo struct {
+	BaseCurrency    string
+	QuoteCurrency   string
+	PricePrecision  int
+	AmountPrecision int
+	MinOrderAmount  float64
+	MinOrderValue   float64
+	Symbol          string
+}
+
 // HuobiWorker 후오비 거래소 워커
 type HuobiWorker struct {
 	mu                 sync.RWMutex
@@ -29,18 +40,21 @@ type HuobiWorker struct {
 	secretKey          string
 	url                string
 	lastSuccessOrderID string
+	symbolInfoCache    map[string]*SymbolInfo
+	symbolInfoCacheMu  sync.RWMutex
 }
 
 // NewHuobiWorker 새로운 후오비 워커를 생성합니다
 func NewHuobiWorker(config *WorkerConfig, storage *MemoryStorage) *HuobiWorker {
 	return &HuobiWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		url:       "https://api.huobi.pro",
+		config:          config,
+		storage:         storage,
+		running:         false,
+		stopCh:          make(chan struct{}),
+		accessKey:       config.AccessKey,
+		secretKey:       config.SecretKey,
+		url:             "https://api.huobi.pro",
+		symbolInfoCache: make(map[string]*SymbolInfo),
 	}
 }
 
@@ -132,9 +146,17 @@ func (hw *HuobiWorker) executeSellOrder() {
 		return
 	}
 
-	// 가격과 수량 포맷팅
-	formattedPrice := hw.formatPrice(hw.config.SellPrice)
-	formattedAmount := hw.formatAmount(hw.config.SellAmount)
+	// 심볼 정보 조회
+	symbolInfo, err := hw.getSymbolInfo(hw.config.Symbol)
+	if err != nil {
+		hw.storage.AddLog("error", fmt.Sprintf("심볼 정보 조회 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
+		// 심볼 정보를 가져오지 못해도 기본값으로 진행
+		symbolInfo = nil
+	}
+
+	// 가격과 수량 포맷팅 (심볼 정보 기반)
+	formattedPrice := hw.formatPrice(hw.config.SellPrice, symbolInfo)
+	formattedAmount := hw.formatAmount(hw.config.SellAmount, symbolInfo)
 
 	// 주문 요청 본문 생성
 	orderBody := map[string]interface{}{
@@ -150,8 +172,8 @@ func (hw *HuobiWorker) executeSellOrder() {
 	// API 호출
 	result, err := hw.callAPI("POST", "/v1/order/orders/place", orderBody)
 	if err != nil {
-		hw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
-			hw.GetPlatformName(), hw.config.SellAmount, hw.config.SellPrice, hw.config.Symbol, err), hw.config.Exchange, hw.config.Symbol)
+		hw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
+			hw.GetPlatformName(), formattedAmount, formattedPrice, hw.config.Symbol, err), hw.config.Exchange, hw.config.Symbol)
 		return
 	}
 
@@ -161,8 +183,8 @@ func (hw *HuobiWorker) executeSellOrder() {
 		if hw.lastSuccessOrderID != orderID {
 			hw.lastSuccessOrderID = orderID
 			hw.mu.Unlock()
-			hw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-				hw.GetPlatformName(), hw.config.SellAmount, hw.config.SellPrice, hw.config.Symbol), hw.config.Exchange, hw.config.Symbol)
+			hw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 성공했습니다.",
+				hw.GetPlatformName(), formattedAmount, formattedPrice, hw.config.Symbol), hw.config.Exchange, hw.config.Symbol)
 		} else {
 			hw.mu.Unlock()
 		}
@@ -170,8 +192,8 @@ func (hw *HuobiWorker) executeSellOrder() {
 		if hw.lastSuccessOrderID != "success" {
 			hw.lastSuccessOrderID = "success"
 			hw.mu.Unlock()
-			hw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-				hw.GetPlatformName(), hw.config.SellAmount, hw.config.SellPrice, hw.config.Symbol), hw.config.Exchange, hw.config.Symbol)
+			hw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 성공했습니다.",
+				hw.GetPlatformName(), formattedAmount, formattedPrice, hw.config.Symbol), hw.config.Exchange, hw.config.Symbol)
 		} else {
 			hw.mu.Unlock()
 		}
@@ -272,6 +294,110 @@ func (hw *HuobiWorker) callAPI(method, path string, body map[string]interface{})
 	return result, nil
 }
 
+// getSymbolInfo 심볼 정보 조회 (GET /v1/common/symbols)
+func (hw *HuobiWorker) getSymbolInfo(symbol string) (*SymbolInfo, error) {
+	// 캐시 확인
+	hw.symbolInfoCacheMu.RLock()
+	if cached, ok := hw.symbolInfoCache[symbol]; ok {
+		hw.symbolInfoCacheMu.RUnlock()
+		return cached, nil
+	}
+	hw.symbolInfoCacheMu.RUnlock()
+
+	// API 호출 (공개 API이므로 인증 불필요)
+	client := &http.Client{Timeout: 10 * time.Second}
+	reqURL := fmt.Sprintf("%s/v1/common/symbols", hw.url)
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP 요청 생성 실패: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("API 호출 실패: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("응답 본문 읽기 실패: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("응답 JSON 파싱 실패: %v", err)
+	}
+
+	if status, ok := result["status"].(string); !ok || status != "ok" {
+		return nil, fmt.Errorf("API 오류: %v", result)
+	}
+
+	// 심볼 변환 (예: BTC/USDT -> btcusdt)
+	huobiSymbol := strings.ToLower(strings.ReplaceAll(symbol, "/", ""))
+
+	// 심볼 정보 찾기
+	if data, ok := result["data"].([]interface{}); ok {
+		for _, item := range data {
+			symbolData := item.(map[string]interface{})
+			if symbolStr, ok := symbolData["symbol"].(string); ok && strings.ToLower(symbolStr) == huobiSymbol {
+				info := &SymbolInfo{
+					Symbol: symbolStr,
+				}
+
+				// base-currency
+				if base, ok := symbolData["base-currency"].(string); ok {
+					info.BaseCurrency = base
+				}
+
+				// quote-currency
+				if quote, ok := symbolData["quote-currency"].(string); ok {
+					info.QuoteCurrency = quote
+				}
+
+				// price-precision (가격 소수점 자리수)
+				if pricePrecision, ok := symbolData["price-precision"].(float64); ok {
+					info.PricePrecision = int(pricePrecision)
+				} else {
+					info.PricePrecision = 8
+				}
+
+				// amount-precision (수량 소수점 자리수)
+				if amountPrecision, ok := symbolData["amount-precision"].(float64); ok {
+					info.AmountPrecision = int(amountPrecision)
+				} else {
+					info.AmountPrecision = 8
+				}
+
+				// min-order-amt (최소 주문 수량)
+				if minOrderAmt, ok := symbolData["min-order-amt"].(float64); ok {
+					info.MinOrderAmount = minOrderAmt
+				} else if minOrderAmt, ok := symbolData["min-order-amt"].(string); ok {
+					parsed, _ := strconv.ParseFloat(minOrderAmt, 64)
+					info.MinOrderAmount = parsed
+				}
+
+				// min-order-value (최소 주문 가치)
+				if minOrderValue, ok := symbolData["min-order-value"].(float64); ok {
+					info.MinOrderValue = minOrderValue
+				} else if minOrderValue, ok := symbolData["min-order-value"].(string); ok {
+					parsed, _ := strconv.ParseFloat(minOrderValue, 64)
+					info.MinOrderValue = parsed
+				}
+
+				// 캐시에 저장
+				hw.symbolInfoCacheMu.Lock()
+				hw.symbolInfoCache[symbol] = info
+				hw.symbolInfoCacheMu.Unlock()
+
+				return info, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("심볼 정보를 찾을 수 없습니다: %s", symbol)
+}
+
 // getSpotAccountID Spot Account ID 조회
 func (hw *HuobiWorker) getSpotAccountID() (string, error) {
 	result, err := hw.callAPI("GET", "/v1/account/accounts", nil)
@@ -294,35 +420,91 @@ func (hw *HuobiWorker) getSpotAccountID() (string, error) {
 	return "", fmt.Errorf("spot 계정 ID를 찾을 수 없습니다. API 권한을 확인하세요")
 }
 
-// formatPrice 가격을 후오비 API 형식에 맞게 포맷팅
-func (hw *HuobiWorker) formatPrice(price float64) string {
-	// 6자리로 자르기 (8자리 입력 시 마지막 2자리 제거)
-	formatted := fmt.Sprintf("%.6f", price)
-
-	// 소수점 이하 부분만 추출
-	parts := strings.Split(formatted, ".")
-	if len(parts) != 2 {
-		return formatted
+// formatPrice 가격을 후오비 API 형식에 맞게 포맷팅 (심볼 정보 기반, 반올림 방지, 뒤의 0 제거)
+func (hw *HuobiWorker) formatPrice(price float64, symbolInfo *SymbolInfo) string {
+	if symbolInfo == nil {
+		symbolInfo = &SymbolInfo{PricePrecision: 8}
 	}
 
-	integerPart := parts[0]
-	decimalPart := parts[1]
-
-	// 소수점 이하가 2자리보다 적으면 2자리까지 채우기
-	if len(decimalPart) < 2 {
-		decimalPart = decimalPart + strings.Repeat("0", 2-len(decimalPart))
+	precision := symbolInfo.PricePrecision
+	if precision > 10 {
+		precision = 10
+	}
+	if precision < 0 {
+		precision = 0
 	}
 
-	// 최소 소수점 둘째자리까지는 항상 표시
-	result := integerPart + "." + decimalPart
+	multiplier := 1.0
+	for i := 0; i < precision; i++ {
+		multiplier *= 10
+	}
 
-	return result
+	// 반올림 방지를 위해 절삭 처리
+	truncated := float64(int(price*multiplier)) / multiplier
+
+	// 포맷팅
+	formatted := fmt.Sprintf("%."+fmt.Sprintf("%d", precision)+"f", truncated)
+
+	// 뒤의 불필요한 0 제거
+	formatted = strings.TrimRight(formatted, "0")
+	// 만약 소수점만 남았다면 제거 (예: "5." -> "5")
+	formatted = strings.TrimRight(formatted, ".")
+
+	// 소수점이 있지만 2자리 미만인 경우 최소 2자리까지 0 채우기 (후오비 API 요구사항)
+	if strings.Contains(formatted, ".") {
+		parts := strings.Split(formatted, ".")
+		if len(parts) == 2 && len(parts[1]) < 2 {
+			formatted = parts[0] + "." + parts[1] + strings.Repeat("0", 2-len(parts[1]))
+		}
+	} else {
+		// 정수인 경우 소수점 2자리 추가
+		formatted = formatted + ".00"
+	}
+
+	return formatted
 }
 
-// formatAmount 수량을 후오비 API 형식에 맞게 포맷팅 (소수점 2자리까지만)
-func (hw *HuobiWorker) formatAmount(amount float64) string {
-	// 소수점 2자리로 자르기
-	formatted := fmt.Sprintf("%.2f", amount)
+// formatAmount 수량을 후오비 API 형식에 맞게 포맷팅 (심볼 정보 기반, 반올림 방지, 뒤의 0 제거)
+func (hw *HuobiWorker) formatAmount(amount float64, symbolInfo *SymbolInfo) string {
+	if symbolInfo == nil {
+		symbolInfo = &SymbolInfo{AmountPrecision: 8}
+	}
+
+	precision := symbolInfo.AmountPrecision
+	if precision > 10 {
+		precision = 10
+	}
+	if precision < 0 {
+		precision = 0
+	}
+
+	multiplier := 1.0
+	for i := 0; i < precision; i++ {
+		multiplier *= 10
+	}
+
+	// 반올림 방지를 위해 절삭 처리
+	truncated := float64(int(amount*multiplier)) / multiplier
+
+	// 포맷팅
+	formatted := fmt.Sprintf("%."+fmt.Sprintf("%d", precision)+"f", truncated)
+
+	// 뒤의 불필요한 0 제거
+	formatted = strings.TrimRight(formatted, "0")
+	// 만약 소수점만 남았다면 제거 (예: "5." -> "5")
+	formatted = strings.TrimRight(formatted, ".")
+
+	// 소수점이 있지만 2자리 미만인 경우 최소 2자리까지 0 채우기 (후오비 API 요구사항)
+	if strings.Contains(formatted, ".") {
+		parts := strings.Split(formatted, ".")
+		if len(parts) == 2 && len(parts[1]) < 2 {
+			formatted = parts[0] + "." + parts[1] + strings.Repeat("0", 2-len(parts[1]))
+		}
+	} else {
+		// 정수인 경우 소수점 2자리 추가
+		formatted = formatted + ".00"
+	}
+
 	return formatted
 }
 

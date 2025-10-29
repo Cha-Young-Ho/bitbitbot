@@ -130,7 +130,7 @@ func (kw *KorbitWorker) executeSellOrder() {
 	params := url.Values{}
 	params.Set("symbol", korbitSymbol) // btc_krw
 	params.Set("side", "sell")         // 매도
-	params.Set("price", fmt.Sprintf("%.0f", kw.config.SellPrice))
+	params.Set("price", fmt.Sprintf("%.8f", kw.config.SellPrice))
 	params.Set("qty", fmt.Sprintf("%.8f", kw.config.SellAmount))
 	params.Set("orderType", "limit") // 지정가
 	params.Set("timeInForce", "gtc") // Good Till Cancel

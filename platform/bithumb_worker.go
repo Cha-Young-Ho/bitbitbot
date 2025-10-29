@@ -135,7 +135,6 @@ func (bw *BithumbWorker) executeSellOrder() {
 	// 심볼 변환 (BTC/KRW -> KRW-BTC)
 	bithumbSymbol := bw.convertToBithumbSymbol(bw.config.Symbol)
 
-	// 빗썸 API 2.0 파라미터 구성 (Upbit과 같은 방식)
 	params := url.Values{}
 	params.Set("market", bithumbSymbol)
 	params.Set("side", "ask")                                     // ask = 매도, bid = 매수

@@ -154,16 +154,9 @@ func (ow *OKXWorker) executeSellOrder() {
 		return
 	}
 
-	// 성공 로그 (중복 방지)
-	ow.mu.Lock()
-	if ow.lastSuccessOrderID != orderID {
-		ow.lastSuccessOrderID = orderID
-		ow.mu.Unlock()
-		ow.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-			ow.GetPlatformName(), ow.config.SellAmount, ow.config.SellPrice, ow.config.Symbol), ow.config.Exchange, ow.config.Symbol)
-	} else {
-		ow.mu.Unlock()
-	}
+	// 성공 로그
+	ow.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
+		ow.config.SellPrice, ow.config.SellAmount, orderID), ow.config.Exchange, ow.config.Symbol)
 }
 
 // convertToOKXSymbol 심볼을 OKX 형식으로 변환

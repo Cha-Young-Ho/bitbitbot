@@ -175,14 +175,14 @@ func (cbw *CoinbaseWorker) executeSellOrder(ctx context.Context) {
 
 	if orderResp != nil {
 		if orderResp.Success && orderResp.SuccessResponse != nil {
-			cbw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
+			cbw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.8f, 심볼: %s 매도 주문에 성공했습니다.",
 				cbw.GetPlatformName(), cbw.config.SellAmount, cbw.config.SellPrice, cbw.config.Symbol), cbw.config.Exchange, cbw.config.Symbol)
 		} else {
 			errorMsg := "알 수 없는 오류"
 			if orderResp.ErrorResponse != nil {
 				errorMsg = fmt.Sprintf("%+v", orderResp.ErrorResponse)
 			}
-			cbw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %s",
+			cbw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.8f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %s",
 				cbw.GetPlatformName(), cbw.config.SellAmount, cbw.config.SellPrice, cbw.config.Symbol, errorMsg), cbw.config.Exchange, cbw.config.Symbol)
 		}
 	}

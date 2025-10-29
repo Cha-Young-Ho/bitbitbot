@@ -125,6 +125,9 @@ fi
 echo "빌드 명령어: $BUILD_CMD"
 echo ""
 
+# Wails PATH 설정
+export PATH=$PATH:/Users/youngho/go/bin
+
 # 빌드 실행
 if eval $BUILD_CMD; then
     echo "✅ 빌드 성공!"

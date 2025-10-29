@@ -128,7 +128,6 @@ func (uw *UpbitWorker) executeSellOrder() {
 	// 업비트 마켓 형식으로 변환 (BTC/KRW -> KRW-BTC)
 	market := uw.toUpbitMarket(uw.config.Symbol)
 
-	// 요청 파라미터
 	params := url.Values{}
 	params.Set("market", market)
 	params.Set("side", "ask")
