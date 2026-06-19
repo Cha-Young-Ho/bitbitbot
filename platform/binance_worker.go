@@ -26,18 +26,30 @@ type BinanceWorker struct {
 	url                string
 	mu                 sync.RWMutex
 	lastSuccessOrderID string
+	symbolInfoCache    map[string]*BinanceSymbolInfo
+	symbolInfoMu       sync.RWMutex
+}
+
+// BinanceSymbolInfo 심볼 정밀도/규칙 정보
+type BinanceSymbolInfo struct {
+	Symbol           string
+	PricePrecision   int
+	AmountPrecision  int
+	MinQty           string
+	MinPrice         string
 }
 
 // NewBinanceWorker 새로운 바이낸스 워커를 생성합니다
 func NewBinanceWorker(config *WorkerConfig, storage *MemoryStorage) *BinanceWorker {
 	return &BinanceWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		url:       "https://api.binance.com/api/v3/order",
+		config:          config,
+		storage:         storage,
+		running:         false,
+		stopCh:          make(chan struct{}),
+		accessKey:       config.AccessKey,
+		secretKey:       config.SecretKey,
+		url:             "https://api.binance.com/api/v3/order",
+		symbolInfoCache: make(map[string]*BinanceSymbolInfo),
 	}
 }
 
@@ -124,13 +136,27 @@ func (bw *BinanceWorker) executeSellOrder() {
 
 	timestamp := time.Now().UnixMilli()
 
+	// 심볼 정밀도 정보 조회 (최초 1회만 API 호출, 이후 캐시 사용)
+	symbolInfo, err := bw.getSymbolInfo(bw.config.Symbol)
+	if err != nil {
+		bw.storage.AddLog("warning", fmt.Sprintf("바이낸스 심볼 정밀도 조회 실패, 기본 정밀도로 진행합니다: %v", err), bw.config.Exchange, bw.config.Symbol)
+	}
+
+	// 수량은 정수만, 가격은 원래 정밀도 사용
+	pricePrecision := 8
+	if symbolInfo != nil && symbolInfo.PricePrecision > 0 {
+		pricePrecision = symbolInfo.PricePrecision
+	}
+	formattedQty := truncateToPrecision(bw.config.SellAmount, 0)
+	formattedPrice := truncateToPrecision(bw.config.SellPrice, pricePrecision)
+
 	params := url.Values{}
 	params.Set("symbol", strings.ReplaceAll(bw.config.Symbol, "/", ""))
 	params.Set("side", "SELL")
 	params.Set("type", "LIMIT")
 	params.Set("timeInForce", "GTC")
-	params.Set("quantity", fmt.Sprintf("%.8f", bw.config.SellAmount))
-	params.Set("price", fmt.Sprintf("%.8f", bw.config.SellPrice))
+	params.Set("quantity", formattedQty)
+	params.Set("price", formattedPrice)
 	params.Set("timestamp", strconv.FormatInt(timestamp, 10))
 
 	// 서명 생성
@@ -168,8 +194,8 @@ func (bw *BinanceWorker) executeSellOrder() {
 			if bw.lastSuccessOrderID != orderIDStr {
 				bw.lastSuccessOrderID = orderIDStr
 				bw.mu.Unlock()
-				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-					bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 성공했습니다.",
+					bw.GetPlatformName(), formattedQty, formattedPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
 			} else {
 				bw.mu.Unlock()
 			}
@@ -178,8 +204,8 @@ func (bw *BinanceWorker) executeSellOrder() {
 			if bw.lastSuccessOrderID != "success" {
 				bw.lastSuccessOrderID = "success"
 				bw.mu.Unlock()
-				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-					bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 성공했습니다.",
+					bw.GetPlatformName(), formattedQty, formattedPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
 			} else {
 				bw.mu.Unlock()
 			}
@@ -189,8 +215,8 @@ func (bw *BinanceWorker) executeSellOrder() {
 		if result["msg"] != nil {
 			errorMsg = fmt.Sprintf("%v", result["msg"])
 		}
-		bw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %s",
-			bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol, errorMsg), bw.config.Exchange, bw.config.Symbol)
+		bw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %s",
+			bw.GetPlatformName(), formattedQty, formattedPrice, bw.config.Symbol, errorMsg), bw.config.Exchange, bw.config.Symbol)
 	}
 }
 
@@ -199,6 +225,95 @@ func (bw *BinanceWorker) generateBinanceSignature(queryString string) string {
 	h := hmac.New(sha256.New, []byte(bw.secretKey))
 	h.Write([]byte(queryString))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// getSymbolInfo 바이낸스 심볼 정밀도 정보를 조회하고 캐시합니다.
+func (bw *BinanceWorker) getSymbolInfo(symbol string) (*BinanceSymbolInfo, error) {
+	// 캐시 확인
+	bw.symbolInfoMu.RLock()
+	if info, ok := bw.symbolInfoCache[symbol]; ok {
+		bw.symbolInfoMu.RUnlock()
+		return info, nil
+	}
+	bw.symbolInfoMu.RUnlock()
+
+	type binanceFilter struct {
+		FilterType string `json:"filterType"`
+		StepSize   string `json:"stepSize,omitempty"`
+		TickSize   string `json:"tickSize,omitempty"`
+		MinQty     string `json:"minQty,omitempty"`
+		MinPrice   string `json:"minPrice,omitempty"`
+	}
+
+	type binanceSymbol struct {
+		Symbol  string          `json:"symbol"`
+		Filters []binanceFilter `json:"filters"`
+	}
+
+	type exchangeInfoResp struct {
+		Symbols []binanceSymbol `json:"symbols"`
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", "https://api.binance.com/api/v3/exchangeInfo", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var info exchangeInfoResp
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, err
+	}
+
+	exSymbol := strings.ReplaceAll(symbol, "/", "")
+
+	for _, s := range info.Symbols {
+		if s.Symbol != exSymbol {
+			continue
+		}
+
+		result := &BinanceSymbolInfo{Symbol: s.Symbol}
+
+		for _, f := range s.Filters {
+			switch f.FilterType {
+			case "LOT_SIZE":
+				result.MinQty = f.MinQty
+				// stepSize로 수량 정밀도 계산
+				if f.StepSize != "" {
+					result.AmountPrecision = countDecimalPlaces(f.StepSize)
+				}
+			case "PRICE_FILTER":
+				result.MinPrice = f.MinPrice
+				// tickSize로 가격 정밀도 계산
+				if f.TickSize != "" {
+					result.PricePrecision = countDecimalPlaces(f.TickSize)
+				}
+			}
+		}
+
+		// 기본값 보정
+		if result.PricePrecision <= 0 {
+			result.PricePrecision = 8
+		}
+		if result.AmountPrecision <= 0 {
+			result.AmountPrecision = 8
+		}
+
+		// 캐시에 저장
+		bw.symbolInfoMu.Lock()
+		bw.symbolInfoCache[symbol] = result
+		bw.symbolInfoMu.Unlock()
+
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("바이낸스 심볼 정보를 찾을 수 없습니다: %s", symbol)
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다

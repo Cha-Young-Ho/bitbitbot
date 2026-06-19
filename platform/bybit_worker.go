@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,8 @@ type BybitWorker struct {
 	secretKey          string
 	exchange           ccxt.IExchange
 	lastSuccessOrderID string
+	pricePrecision     int
+	amountPrecision    int
 }
 
 // NewBybitWorker 새로운 바이비트 워커를 생성합니다
@@ -42,13 +45,15 @@ func NewBybitWorker(config *WorkerConfig, storage *MemoryStorage) *BybitWorker {
 	exchange := ccxt.CreateExchange("bybit", exchangeConfig)
 
 	return &BybitWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		exchange:  exchange,
+		config:         config,
+		storage:        storage,
+		running:        false,
+		stopCh:         make(chan struct{}),
+		accessKey:      config.AccessKey,
+		secretKey:      config.SecretKey,
+		exchange:       exchange,
+		pricePrecision: 0,
+		amountPrecision: 0,
 	}
 }
 
@@ -141,22 +146,33 @@ func (bw *BybitWorker) executeSellOrder() {
 	// 바이비트 심볼 형식으로 변환 (예: BTC/USDT -> BTC/USDT)
 	bybitSymbol := bw.convertToBybitSymbol(bw.config.Symbol)
 
+	amount := bw.config.SellAmount
+	price := bw.config.SellPrice
+
+		// 수량은 정수만, 가격은 원래 정밀도 사용
+		truncated, _ := strconv.ParseFloat(truncateToPrecision(amount, 0), 64)
+		amount = truncated
+		if bw.pricePrecision > 0 {
+			truncated, _ = strconv.ParseFloat(truncateToPrecision(price, bw.pricePrecision), 64)
+			price = truncated
+		}
+
 	// CCXT를 사용한 지정가 매도 주문
 	orderID, err := bw.exchange.CreateLimitSellOrder(
-		bybitSymbol,          // 심볼 (예: BTC/USDT)
-		bw.config.SellAmount, // 수량
-		bw.config.SellPrice,  // 가격
+		bybitSymbol, // 심볼 (예: BTC/USDT)
+		amount,      // 수량
+		price,       // 가격
 	)
 
 	if err != nil {
-		bw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
-			bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol, err), bw.config.Exchange, bw.config.Symbol)
+		bw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.8f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
+			bw.GetPlatformName(), amount, price, bw.config.Symbol, err), bw.config.Exchange, bw.config.Symbol)
 		return
 	}
 
 	// 성공 로그
-	bw.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		bw.config.SellPrice, bw.config.SellAmount, orderID), bw.config.Exchange, bw.config.Symbol)
+	bw.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.8f, 수량: %.8f, 주문ID: %s)",
+		price, amount, orderID), bw.config.Exchange, bw.config.Symbol)
 }
 
 // convertToBybitSymbol 바이비트 심볼 형식으로 변환

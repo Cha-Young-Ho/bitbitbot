@@ -26,18 +26,22 @@ type KorbitWorker struct {
 	secretKey          string
 	url                string
 	lastSuccessOrderID string
+	pricePrecision     int
+	quantityPrecision  int
 }
 
 // NewKorbitWorker 새로운 코빗 워커를 생성합니다
 func NewKorbitWorker(config *WorkerConfig, storage *MemoryStorage) *KorbitWorker {
 	return &KorbitWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		url:       "https://api.korbit.co.kr/v2/orders",
+		config:           config,
+		storage:          storage,
+		running:          false,
+		stopCh:           make(chan struct{}),
+		accessKey:        config.AccessKey,
+		secretKey:        config.SecretKey,
+		url:              "https://api.korbit.co.kr/v2/orders",
+		pricePrecision:   8,
+		quantityPrecision: 8,
 	}
 }
 
@@ -125,13 +129,18 @@ func (kw *KorbitWorker) executeSellOrder() {
 	// 심볼 변환 (BTC/KRW -> btc_krw)
 	korbitSymbol := kw.convertToKorbitSymbol(kw.config.Symbol)
 
+	// 가격/수량 정밀도에 맞게 truncate
+	// 수량은 정수만, 가격은 기본 8자리 사용
+	formattedPrice := fmt.Sprintf("%.8f", kw.config.SellPrice)
+	formattedQty := truncateToPrecision(kw.config.SellAmount, 0)
+
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 
 	params := url.Values{}
 	params.Set("symbol", korbitSymbol) // btc_krw
 	params.Set("side", "sell")         // 매도
-	params.Set("price", fmt.Sprintf("%.8f", kw.config.SellPrice))
-	params.Set("qty", fmt.Sprintf("%.8f", kw.config.SellAmount))
+	params.Set("price", formattedPrice)
+	params.Set("qty", formattedQty)
 	params.Set("orderType", "limit") // 지정가
 	params.Set("timeInForce", "gtc") // Good Till Cancel
 	params.Set("timestamp", timestamp)
@@ -166,18 +175,18 @@ func (kw *KorbitWorker) executeSellOrder() {
 	if resp.StatusCode == 200 {
 		orderID, ok := result["id"].(string)
 		if ok && orderID != "" {
-			kw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.8f",
-				orderID, kw.config.SellPrice, kw.config.SellAmount), kw.config.Exchange, kw.config.Symbol)
+			kw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%s, 수량=%s",
+				orderID, formattedPrice, formattedQty), kw.config.Exchange, kw.config.Symbol)
 		} else {
-			kw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
-				kw.config.SellPrice, kw.config.SellAmount), kw.config.Exchange, kw.config.Symbol)
+			kw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%s, 수량=%s",
+				formattedPrice, formattedQty), kw.config.Exchange, kw.config.Symbol)
 		}
 	} else {
 		errorMsg := "알 수 없는 오류"
 		if result["error"] != nil {
 			errorMsg = fmt.Sprintf("%v", result["error"])
 		}
-		kw.storage.AddLog("error", fmt.Sprintf("코빗 API 오류: %s", errorMsg), kw.config.Exchange, kw.config.Symbol)
+		kw.storage.AddLog("error", fmt.Sprintf("코빗 API 오류: %s (요청 가격=%s, 수량=%s)", errorMsg, formattedPrice, formattedQty), kw.config.Exchange, kw.config.Symbol)
 	}
 }
 

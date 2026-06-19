@@ -28,18 +28,22 @@ type BithumbWorker struct {
 	secretKey          string
 	url                string
 	lastSuccessOrderID string
+	pricePrecision     int
+	volumePrecision    int
 }
 
 // NewBithumbWorker 새로운 빗썸 워커를 생성합니다
 func NewBithumbWorker(config *WorkerConfig, storage *MemoryStorage) *BithumbWorker {
 	return &BithumbWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		url:       "https://api.bithumb.com/v1/orders",
+		config:          config,
+		storage:         storage,
+		running:         false,
+		stopCh:          make(chan struct{}),
+		accessKey:       config.AccessKey,
+		secretKey:       config.SecretKey,
+		url:             "https://api.bithumb.com/v1/orders",
+		pricePrecision:  8, // 기본값
+		volumePrecision: 8, // 기본값
 	}
 }
 
@@ -135,12 +139,17 @@ func (bw *BithumbWorker) executeSellOrder() {
 	// 심볼 변환 (BTC/KRW -> KRW-BTC)
 	bithumbSymbol := bw.convertToBithumbSymbol(bw.config.Symbol)
 
+	// 가격/수량 정밀도에 맞게 truncate
+	// 수량은 정수만, 가격은 기본 8자리 사용
+	formattedPrice := fmt.Sprintf("%.8f", bw.config.SellPrice)
+	formattedVolume := truncateToPrecision(bw.config.SellAmount, 0)
+
 	params := url.Values{}
 	params.Set("market", bithumbSymbol)
 	params.Set("side", "ask")                                     // ask = 매도, bid = 매수
 	params.Set("ord_type", "limit")                               // limit = 지정가 주문
-	params.Set("price", fmt.Sprintf("%.8f", bw.config.SellPrice)) // 소수점 8자리까지 유지
-	params.Set("volume", fmt.Sprintf("%.8f", bw.config.SellAmount))
+	params.Set("price", formattedPrice)
+	params.Set("volume", formattedVolume)
 
 	// JWT 토큰 생성 (쿼리 파라미터를 query_hash로 사용)
 	authToken, err := bw.createBithumbJWTToken(params)
@@ -217,8 +226,8 @@ func (bw *BithumbWorker) executeSellOrder() {
 			if bw.lastSuccessOrderID != orderID {
 				bw.lastSuccessOrderID = orderID
 				bw.mu.Unlock()
-				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-					bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 성공했습니다.",
+					bw.GetPlatformName(), formattedVolume, formattedPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
 			} else {
 				bw.mu.Unlock()
 			}
@@ -226,8 +235,8 @@ func (bw *BithumbWorker) executeSellOrder() {
 			if bw.lastSuccessOrderID != "success" {
 				bw.lastSuccessOrderID = "success"
 				bw.mu.Unlock()
-				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-					bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
+				bw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 성공했습니다.",
+					bw.GetPlatformName(), formattedVolume, formattedPrice, bw.config.Symbol), bw.config.Exchange, bw.config.Symbol)
 			} else {
 				bw.mu.Unlock()
 			}
@@ -249,7 +258,7 @@ func (bw *BithumbWorker) executeSellOrder() {
 		}
 
 		// 전체 응답 로그 제거
-		bw.storage.AddLog("error", fmt.Sprintf("빗썸 요청 실패: %s", errorMsg), bw.config.Exchange, bw.config.Symbol)
+		bw.storage.AddLog("error", fmt.Sprintf("빗썸 요청 실패: %s (요청 가격=%s, 수량=%s)", errorMsg, formattedPrice, formattedVolume), bw.config.Exchange, bw.config.Symbol)
 	}
 }
 

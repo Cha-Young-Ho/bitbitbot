@@ -27,18 +27,22 @@ type MexcWorker struct {
 	secretKey          string
 	url                string
 	lastSuccessOrderID string
+	pricePrecision     int
+	quantityPrecision  int
 }
 
 // NewMexcWorker 새로운 MEXC 워커를 생성합니다
 func NewMexcWorker(config *WorkerConfig, storage *MemoryStorage) *MexcWorker {
 	return &MexcWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		url:       "https://api.mexc.com/api/v3/order",
+		config:           config,
+		storage:          storage,
+		running:          false,
+		stopCh:           make(chan struct{}),
+		accessKey:        config.AccessKey,
+		secretKey:        config.SecretKey,
+		url:              "https://api.mexc.com/api/v3/order",
+		pricePrecision:   8,
+		quantityPrecision: 8,
 	}
 }
 
@@ -125,12 +129,17 @@ func (mw *MexcWorker) executeSellOrder() {
 
 	timestamp := time.Now().UnixMilli()
 
+	// 가격/수량 정밀도에 맞게 truncate
+	// 수량은 정수만, 가격은 기본 8자리 사용
+	formattedQty := truncateToPrecision(mw.config.SellAmount, 0)
+	formattedPrice := fmt.Sprintf("%.8f", mw.config.SellPrice)
+
 	params := map[string]string{
 		"symbol":    strings.ReplaceAll(mw.config.Symbol, "/", ""),
 		"side":      "SELL",
 		"type":      "LIMIT",
-		"quantity":  fmt.Sprintf("%.8f", mw.config.SellAmount),
-		"price":     fmt.Sprintf("%.8f", mw.config.SellPrice),
+		"quantity":  formattedQty,
+		"price":     formattedPrice,
 		"timestamp": strconv.FormatInt(timestamp, 10),
 	}
 
@@ -175,18 +184,18 @@ func (mw *MexcWorker) executeSellOrder() {
 	if resp.StatusCode == 200 {
 		orderID, ok := result["orderId"].(float64)
 		if ok {
-			mw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%.0f, 가격=%.2f, 수량=%.8f",
-				orderID, mw.config.SellPrice, mw.config.SellAmount), mw.config.Exchange, mw.config.Symbol)
+			mw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%.0f, 가격=%s, 수량=%s",
+				orderID, formattedPrice, formattedQty), mw.config.Exchange, mw.config.Symbol)
 		} else {
-			mw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
-				mw.config.SellPrice, mw.config.SellAmount), mw.config.Exchange, mw.config.Symbol)
+			mw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%s, 수량=%s",
+				formattedPrice, formattedQty), mw.config.Exchange, mw.config.Symbol)
 		}
 	} else {
 		errorMsg := "알 수 없는 오류"
 		if result["msg"] != nil {
 			errorMsg = fmt.Sprintf("%v", result["msg"])
 		}
-		mw.storage.AddLog("error", fmt.Sprintf("MEXC API 오류: %s", errorMsg), mw.config.Exchange, mw.config.Symbol)
+		mw.storage.AddLog("error", fmt.Sprintf("MEXC API 오류: %s (요청 가격=%s, 수량=%s)", errorMsg, formattedPrice, formattedQty), mw.config.Exchange, mw.config.Symbol)
 	}
 }
 

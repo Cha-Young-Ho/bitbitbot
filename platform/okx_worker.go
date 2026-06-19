@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,8 @@ type OKXWorker struct {
 	secretKey          string
 	exchange           ccxt.IExchange
 	lastSuccessOrderID string
+	pricePrecision     int
+	amountPrecision    int
 }
 
 // NewOKXWorker 새로운 OKX 워커를 생성합니다
@@ -42,13 +45,15 @@ func NewOKXWorker(config *WorkerConfig, storage *MemoryStorage) *OKXWorker {
 	exchange := ccxt.CreateExchange("okx", exchangeConfig)
 
 	return &OKXWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		exchange:  exchange,
+		config:         config,
+		storage:        storage,
+		running:        false,
+		stopCh:         make(chan struct{}),
+		accessKey:      config.AccessKey,
+		secretKey:      config.SecretKey,
+		exchange:       exchange,
+		pricePrecision: 0,
+		amountPrecision: 0,
 	}
 }
 
@@ -141,22 +146,33 @@ func (ow *OKXWorker) executeSellOrder() {
 	// OKX 심볼 형식으로 변환 (예: BTC/USDT -> BTC-USDT)
 	okxSymbol := ow.convertToOKXSymbol(ow.config.Symbol)
 
+	amount := ow.config.SellAmount
+	price := ow.config.SellPrice
+
+		// 수량은 정수만, 가격은 원래 정밀도 사용
+		truncated, _ := strconv.ParseFloat(truncateToPrecision(amount, 0), 64)
+		amount = truncated
+		if ow.pricePrecision > 0 {
+			truncated, _ = strconv.ParseFloat(truncateToPrecision(price, ow.pricePrecision), 64)
+			price = truncated
+		}
+
 	// CCXT를 사용한 지정가 매도 주문
 	orderID, err := ow.exchange.CreateLimitSellOrder(
-		okxSymbol,            // 심볼 (예: BTC-USDT)
-		ow.config.SellAmount, // 수량
-		ow.config.SellPrice,  // 가격
+		okxSymbol, // 심볼 (예: BTC-USDT)
+		amount,    // 수량
+		price,     // 가격
 	)
 
 	if err != nil {
-		ow.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
-			ow.GetPlatformName(), ow.config.SellAmount, ow.config.SellPrice, ow.config.Symbol, err), ow.config.Exchange, ow.config.Symbol)
+		ow.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.8f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
+			ow.GetPlatformName(), amount, price, ow.config.Symbol, err), ow.config.Exchange, ow.config.Symbol)
 		return
 	}
 
 	// 성공 로그
-	ow.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		ow.config.SellPrice, ow.config.SellAmount, orderID), ow.config.Exchange, ow.config.Symbol)
+	ow.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.8f, 수량: %.8f, 주문ID: %s)",
+		price, amount, orderID), ow.config.Exchange, ow.config.Symbol)
 }
 
 // convertToOKXSymbol 심볼을 OKX 형식으로 변환

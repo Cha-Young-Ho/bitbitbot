@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,8 @@ type BitgetWorker struct {
 	exchange           ccxt.IExchange
 	mu                 sync.RWMutex
 	lastSuccessOrderID string
+	pricePrecision     int
+	amountPrecision    int
 }
 
 // NewBitgetWorker 새로운 비트겟 워커를 생성합니다
@@ -42,13 +45,15 @@ func NewBitgetWorker(config *WorkerConfig, storage *MemoryStorage) *BitgetWorker
 	exchange := ccxt.CreateExchange("bitget", exchangeConfig)
 
 	return &BitgetWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		exchange:  exchange,
+		config:         config,
+		storage:        storage,
+		running:        false,
+		stopCh:         make(chan struct{}),
+		accessKey:      config.AccessKey,
+		secretKey:      config.SecretKey,
+		exchange:       exchange,
+		pricePrecision: 0, // 0이면 CCXT가 알아서 처리, 필요시 확장
+		amountPrecision: 0,
 	}
 }
 
@@ -142,22 +147,33 @@ func (bw *BitgetWorker) executeSellOrder() {
 	// 비트겟 심볼 형식으로 변환 (예: BTC/USDT -> BTCUSDT)
 	bitgetSymbol := bw.convertToBitgetSymbol(bw.config.Symbol)
 
+	amount := bw.config.SellAmount
+	price := bw.config.SellPrice
+
+		// 수량은 정수만, 가격은 원래 정밀도 사용
+		truncated, _ := strconv.ParseFloat(truncateToPrecision(amount, 0), 64)
+		amount = truncated
+		if bw.pricePrecision > 0 {
+			truncated, _ = strconv.ParseFloat(truncateToPrecision(price, bw.pricePrecision), 64)
+			price = truncated
+		}
+
 	// CCXT를 사용한 지정가 매도 주문
 	orderID, err := bw.exchange.CreateLimitSellOrder(
-		bitgetSymbol,         // 심볼 (예: BTCUSDT)
-		bw.config.SellAmount, // 수량
-		bw.config.SellPrice,  // 가격
+		bitgetSymbol, // 심볼 (예: BTCUSDT)
+		amount,       // 수량
+		price,        // 가격
 	)
 
 	if err != nil {
-		bw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
-			bw.GetPlatformName(), bw.config.SellAmount, bw.config.SellPrice, bw.config.Symbol, err), bw.config.Exchange, bw.config.Symbol)
+		bw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.8f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %v",
+			bw.GetPlatformName(), amount, price, bw.config.Symbol, err), bw.config.Exchange, bw.config.Symbol)
 		return
 	}
 
 	// 성공 로그
-	bw.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		bw.config.SellPrice, bw.config.SellAmount, orderID), bw.config.Exchange, bw.config.Symbol)
+	bw.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.8f, 수량: %.8f, 주문ID: %s)",
+		price, amount, orderID), bw.config.Exchange, bw.config.Symbol)
 }
 
 // convertToBitgetSymbol 비트겟 심볼 형식으로 변환

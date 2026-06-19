@@ -29,18 +29,28 @@ type UpbitWorker struct {
 	secretKey          string
 	url                string
 	lastSuccessOrderID string
+	marketInfoCache    map[string]*UpbitMarketInfo
+	marketInfoMu       sync.RWMutex
+}
+
+// UpbitMarketInfo 업비트 마켓 정밀도 정보
+type UpbitMarketInfo struct {
+	Market         string  `json:"market"`
+	MinPriceUnit   float64 `json:"min_price_unit,omitempty"` // (주의) 실제 필드는 시기별로 다를 수 있음
+	PricePrecision int     // 우리가 계산한 가격 소수 자릿수
 }
 
 // NewUpbitWorker 새로운 업비트 워커를 생성합니다
 func NewUpbitWorker(config *WorkerConfig, storage *MemoryStorage) *UpbitWorker {
 	return &UpbitWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		url:       "https://api.upbit.com/v1/orders",
+		config:          config,
+		storage:         storage,
+		running:         false,
+		stopCh:          make(chan struct{}),
+		accessKey:       config.AccessKey,
+		secretKey:       config.SecretKey,
+		url:             "https://api.upbit.com/v1/orders",
+		marketInfoCache: make(map[string]*UpbitMarketInfo),
 	}
 }
 
@@ -128,11 +138,15 @@ func (uw *UpbitWorker) executeSellOrder() {
 	// 업비트 마켓 형식으로 변환 (BTC/KRW -> KRW-BTC)
 	market := uw.toUpbitMarket(uw.config.Symbol)
 
+	// 수량은 정수만, 가격은 기본 8자리 사용 (업비트는 호가 단위가 다양하므로)
+	formattedVolume := truncateToPrecision(uw.config.SellAmount, 0)
+	formattedPrice := fmt.Sprintf("%.8f", uw.config.SellPrice)
+
 	params := url.Values{}
 	params.Set("market", market)
 	params.Set("side", "ask")
-	params.Set("volume", fmt.Sprintf("%.8f", uw.config.SellAmount))
-	params.Set("price", fmt.Sprintf("%.8f", uw.config.SellPrice))
+	params.Set("volume", formattedVolume)
+	params.Set("price", formattedPrice)
 	params.Set("ord_type", "limit")
 
 	// JWT 토큰 생성
@@ -183,11 +197,11 @@ func (uw *UpbitWorker) executeSellOrder() {
 	if resp.StatusCode == 201 {
 		orderID, ok := result["uuid"].(string)
 		if ok && orderID != "" {
-			uw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%.2f, 수량=%.8f",
-				orderID, uw.config.SellPrice, uw.config.SellAmount), uw.config.Exchange, uw.config.Symbol)
+			uw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 주문번호=%s, 가격=%s, 수량=%s",
+				orderID, formattedPrice, formattedVolume), uw.config.Exchange, uw.config.Symbol)
 		} else {
-			uw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%.2f, 수량=%.8f",
-				uw.config.SellPrice, uw.config.SellAmount), uw.config.Exchange, uw.config.Symbol)
+			uw.storage.AddLog("success", fmt.Sprintf("매도 주문 성공: 가격=%s, 수량=%s",
+				formattedPrice, formattedVolume), uw.config.Exchange, uw.config.Symbol)
 		}
 	} else {
 		errorMsg := "알 수 없는 오류"
@@ -197,7 +211,7 @@ func (uw *UpbitWorker) executeSellOrder() {
 				errorMsg = fmt.Sprintf("%v", errorMap["message"])
 			}
 		}
-		uw.storage.AddLog("error", fmt.Sprintf("업비트 API 오류: %s", errorMsg), uw.config.Exchange, uw.config.Symbol)
+		uw.storage.AddLog("error", fmt.Sprintf("업비트 API 오류: %s (요청 가격=%s, 수량=%s)", errorMsg, formattedPrice, formattedVolume), uw.config.Exchange, uw.config.Symbol)
 	}
 }
 
@@ -256,4 +270,30 @@ func (uw *UpbitWorker) createUpbitJWTToken(params url.Values) (string, error) {
 // GetPlatformName 플랫폼 이름을 반환합니다
 func (uw *UpbitWorker) GetPlatformName() string {
 	return "Upbit"
+}
+
+// getMarketInfo 업비트 마켓 정밀도 정보를 조회하고 캐시합니다.
+// 참고: 업비트 공식 시세/마켓 정보 API는 고정된 price unit을 직접 주지 않기 때문에,
+// 여기서는 마켓 캔들/호가를 참고해 대략적인 소수 자릿수를 계산하는 방식 대신,
+// 향후 확장용으로 캐시 구조만 두고 현재는 가격을 입력값 기준으로만 truncate 합니다.
+func (uw *UpbitWorker) getMarketInfo(market string) (*UpbitMarketInfo, error) {
+	// 캐시 확인
+	uw.marketInfoMu.RLock()
+	if info, ok := uw.marketInfoCache[market]; ok {
+		uw.marketInfoMu.RUnlock()
+		return info, nil
+	}
+	uw.marketInfoMu.RUnlock()
+
+	// 간단히: 기본 구조만 채우고, 향후 필요 시 /v1/market/all, /v1/ticker 등으로 확장 가능
+	info := &UpbitMarketInfo{
+		Market:         market,
+		PricePrecision: 0, // 0이면 원본 값 사용
+	}
+
+	uw.marketInfoMu.Lock()
+	uw.marketInfoCache[market] = info
+	uw.marketInfoMu.Unlock()
+
+	return info, nil
 }

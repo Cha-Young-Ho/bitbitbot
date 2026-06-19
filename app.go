@@ -251,9 +251,20 @@ func (a *App) GetExchangeKey(keyID string) map[string]interface{} {
 // GetSupportedExchanges 지원되는 거래소 목록
 func (a *App) GetSupportedExchanges() map[string]interface{} {
 	exchanges := []string{
-		"Upbit", "Bithumb", "Binance", "Bybit", "KuCoin", 
-		"Coinbase", "Huobi", "Mexc", "Bitget", "Coinone", 
-		"Korbit", "OKX", "Gate",
+		// 사용자 선호 순서: Upbit -> Bithumb -> Coinone -> Korbit -> Binance -> 나머지 알파벳 순
+		"Upbit",
+		"Bithumb",
+		"Coinone",
+		"Korbit",
+		"Binance",
+		"Bitget",
+		"Bybit",
+		"Coinbase",
+		"Gate",
+		"Huobi",
+		"KuCoin",
+		"Mexc",
+		"OKX",
 	}
 	
 	return map[string]interface{}{
@@ -316,11 +327,11 @@ func (a *App) OnStartup(ctx context.Context) {
 	// 초기 버전 체크 및 상태 확인
 	go a.initialVersionCheck()
 
-	// 지속적인 버전 체크 시작 (30분마다)
-	go a.continuousVersionCheck()
-
-	// 지속적인 상태 체크 시작 (30분마다)
-	go a.continuousStatusCheck()
+	// 원격 설정(S3)을 켠 경우에만 주기적 재검증
+	if remoteConfigEnabled() {
+		go a.continuousVersionCheck()
+		go a.continuousStatusCheck()
+	}
 }
 
 // OnShutdown 애플리케이션 종료 시 호출

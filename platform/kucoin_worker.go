@@ -26,18 +26,30 @@ type KuCoinWorker struct {
 	secretKey          string
 	url                string
 	lastSuccessOrderID string
+	symbolInfoCache    map[string]*KuCoinSymbolInfo
+	symbolInfoMu       sync.RWMutex
+}
+
+// KuCoinSymbolInfo 심볼 정밀도/규칙 정보
+type KuCoinSymbolInfo struct {
+	Symbol          string
+	BaseIncrement   string
+	PriceIncrement  string
+	AmountPrecision int
+	PricePrecision  int
 }
 
 // NewKuCoinWorker 새로운 쿠코인 워커를 생성합니다
 func NewKuCoinWorker(config *WorkerConfig, storage *MemoryStorage) *KuCoinWorker {
 	return &KuCoinWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		url:       "https://api.kucoin.com/api/v1/orders",
+		config:          config,
+		storage:         storage,
+		running:         false,
+		stopCh:          make(chan struct{}),
+		accessKey:       config.AccessKey,
+		secretKey:       config.SecretKey,
+		url:             "https://api.kucoin.com/api/v1/orders",
+		symbolInfoCache: make(map[string]*KuCoinSymbolInfo),
 	}
 }
 
@@ -124,13 +136,27 @@ func (kcw *KuCoinWorker) executeSellOrder() {
 
 	timestamp := time.Now().UnixMilli()
 
+	// 심볼 정밀도 정보 조회 (최초 1회만 API 호출, 이후 캐시 사용)
+	symbolInfo, err := kcw.getSymbolInfo(kcw.config.Symbol)
+	if err != nil {
+		kcw.storage.AddLog("warning", fmt.Sprintf("쿠코인 심볼 정밀도 조회 실패, 기본 정밀도로 진행합니다: %v", err), kcw.config.Exchange, kcw.config.Symbol)
+	}
+
+	// 수량은 정수만, 가격은 원래 정밀도 사용
+	pricePrecision := 8
+	if symbolInfo != nil && symbolInfo.PricePrecision > 0 {
+		pricePrecision = symbolInfo.PricePrecision
+	}
+	formattedSize := truncateToPrecision(kcw.config.SellAmount, 0)
+	formattedPrice := truncateToPrecision(kcw.config.SellPrice, pricePrecision)
+
 	requestBody := map[string]interface{}{
 		"clientOid": fmt.Sprintf("sell_%d", timestamp),
 		"symbol":    strings.ReplaceAll(kcw.config.Symbol, "/", "-"),
 		"side":      "sell",
 		"type":      "limit",
-		"size":      fmt.Sprintf("%.8f", kcw.config.SellAmount),
-		"price":     fmt.Sprintf("%.8f", kcw.config.SellPrice),
+		"size":      formattedSize,
+		"price":     formattedPrice,
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
@@ -189,8 +215,8 @@ func (kcw *KuCoinWorker) executeSellOrder() {
 		if kcw.lastSuccessOrderID == "" {
 			kcw.lastSuccessOrderID = "success"
 			kcw.mu.Unlock()
-			kcw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.2f, 심볼: %s 매도 주문에 성공했습니다.",
-				kcw.GetPlatformName(), kcw.config.SellAmount, kcw.config.SellPrice, kcw.config.Symbol), kcw.config.Exchange, kcw.config.Symbol)
+				kcw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 성공했습니다.",
+					kcw.GetPlatformName(), formattedSize, formattedPrice, kcw.config.Symbol), kcw.config.Exchange, kcw.config.Symbol)
 		} else {
 			kcw.mu.Unlock()
 		}
@@ -200,7 +226,7 @@ func (kcw *KuCoinWorker) executeSellOrder() {
 			errorMsg = fmt.Sprintf("%v", result["msg"])
 		}
 		fmt.Printf("[DEBUG] 쿠코인 API 오류 (code: %s): %s\n", code, errorMsg)
-		kcw.storage.AddLog("error", fmt.Sprintf("쿠코인 API 오류 (code: %s): %s", code, errorMsg), kcw.config.Exchange, kcw.config.Symbol)
+		kcw.storage.AddLog("error", fmt.Sprintf("쿠코인 API 오류 (code: %s): %s (요청 수량: %s, 가격: %s)", code, errorMsg, formattedSize, formattedPrice), kcw.config.Exchange, kcw.config.Symbol)
 	}
 }
 
@@ -210,6 +236,81 @@ func (kcw *KuCoinWorker) createKuCoinSignature(body string, timestamp int64) str
 	h := hmac.New(sha256.New, []byte(kcw.secretKey))
 	h.Write([]byte(message))
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+// getSymbolInfo 쿠코인 심볼 정밀도 정보를 조회하고 캐시합니다.
+func (kcw *KuCoinWorker) getSymbolInfo(symbol string) (*KuCoinSymbolInfo, error) {
+	// 캐시 확인
+	kcw.symbolInfoMu.RLock()
+	if info, ok := kcw.symbolInfoCache[symbol]; ok {
+		kcw.symbolInfoMu.RUnlock()
+		return info, nil
+	}
+	kcw.symbolInfoMu.RUnlock()
+
+	type kuCoinSymbol struct {
+		Symbol         string `json:"symbol"`
+		BaseIncrement  string `json:"baseIncrement"`
+		PriceIncrement string `json:"priceIncrement"`
+	}
+
+	type kuCoinResp struct {
+		Code string         `json:"code"`
+		Data []kuCoinSymbol `json:"data"`
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", "https://api.kucoin.com/api/v1/symbols", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var info kuCoinResp
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, err
+	}
+
+	if info.Code != "200000" {
+		return nil, fmt.Errorf("쿠코인 심볼 정보 API 오류 코드: %s", info.Code)
+	}
+
+	exSymbol := strings.ReplaceAll(symbol, "/", "-")
+	for _, s := range info.Data {
+		if s.Symbol != exSymbol {
+			continue
+		}
+
+	result := &KuCoinSymbolInfo{
+			Symbol:         s.Symbol,
+			BaseIncrement:  s.BaseIncrement,
+			PriceIncrement: s.PriceIncrement,
+		}
+
+		// 증가 단위를 소수 자릿수로 변환
+		result.AmountPrecision = countDecimalPlaces(result.BaseIncrement)
+		result.PricePrecision = countDecimalPlaces(result.PriceIncrement)
+
+		if result.AmountPrecision <= 0 {
+			result.AmountPrecision = 8
+		}
+		if result.PricePrecision <= 0 {
+			result.PricePrecision = 8
+		}
+
+		kcw.symbolInfoMu.Lock()
+		kcw.symbolInfoCache[symbol] = result
+		kcw.symbolInfoMu.Unlock()
+
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("쿠코인 심볼 정보를 찾을 수 없습니다: %s", symbol)
 }
 
 // GetPlatformName 플랫폼 이름을 반환합니다

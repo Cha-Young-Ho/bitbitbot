@@ -28,18 +28,22 @@ type CoinoneWorker struct {
 	secretKey          string
 	url                string
 	lastSuccessOrderID string
+	pricePrecision     int
+	quantityPrecision  int
 }
 
 // NewCoinoneWorker 새로운 코인원 워커를 생성합니다
 func NewCoinoneWorker(config *WorkerConfig, storage *MemoryStorage) *CoinoneWorker {
 	return &CoinoneWorker{
-		config:    config,
-		storage:   storage,
-		running:   false,
-		stopCh:    make(chan struct{}),
-		accessKey: config.AccessKey,
-		secretKey: config.SecretKey,
-		url:       "https://api.coinone.co.kr/v2.1/order",
+		config:          config,
+		storage:         storage,
+		running:         false,
+		stopCh:          make(chan struct{}),
+		accessKey:       config.AccessKey,
+		secretKey:       config.SecretKey,
+		url:             "https://api.coinone.co.kr/v2.1/order",
+		pricePrecision:  8,
+		quantityPrecision: 8,
 	}
 }
 
@@ -135,20 +139,25 @@ func (cw *CoinoneWorker) executeSellOrder() {
 	// 심볼 변환 (BTC/KRW -> BTC)
 	coinoneSymbol := cw.convertToCoinoneSymbol(cw.config.Symbol)
 
+	// 가격/수량 정밀도에 맞게 truncate
+	// 수량은 정수만, 가격은 기본 8자리 사용
+	formattedQty := truncateToPrecision(cw.config.SellAmount, 0)
+	formattedPrice := fmt.Sprintf("%.8f", cw.config.SellPrice)
+
 	// Coinone API 2.1 직접 호출
-	orderID, err := cw.createCoinoneOrderV21(coinoneSymbol)
+	orderID, err := cw.createCoinoneOrderV21(coinoneSymbol, formattedPrice, formattedQty)
 	if err != nil {
 		cw.storage.AddLog("error", fmt.Sprintf("매도 주문 실패: %v", err), cw.config.Exchange, cw.config.Symbol)
 		return
 	}
 
 	// 성공 로그
-	cw.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %.2f, 수량: %.8f, 주문ID: %s)",
-		cw.config.SellPrice, cw.config.SellAmount, orderID), cw.config.Exchange, cw.config.Symbol)
+	cw.storage.AddLog("success", fmt.Sprintf("지정가 매도 주문 생성 완료 (가격: %s, 수량: %s, 주문ID: %s)",
+		formattedPrice, formattedQty, orderID), cw.config.Exchange, cw.config.Symbol)
 }
 
 // createCoinoneOrderV21 코인원 API 2.1을 사용하여 주문 생성
-func (cw *CoinoneWorker) createCoinoneOrderV21(coinoneSymbol string) (string, error) {
+func (cw *CoinoneWorker) createCoinoneOrderV21(coinoneSymbol, formattedPrice, formattedQty string) (string, error) {
 	// 1. 요청 바디 구성 (코인원 API 2.1 문서 기준)
 	nonce := uuid.New().String() // UUID v4 형식
 
@@ -159,8 +168,8 @@ func (cw *CoinoneWorker) createCoinoneOrderV21(coinoneSymbol string) (string, er
 		"quote_currency":  "KRW",
 		"target_currency": coinoneSymbol,
 		"type":            "LIMIT",                                  // 지정가
-		"price":           fmt.Sprintf("%.8f", cw.config.SellPrice), // 소수점 8자리까지 유지
-		"qty":             fmt.Sprintf("%.8f", cw.config.SellAmount),
+		"price":           formattedPrice,
+		"qty":             formattedQty,
 		"post_only":       false, // Maker/Taker 모두 허용 (매수벽에 걸려도 체결 가능)
 	}
 

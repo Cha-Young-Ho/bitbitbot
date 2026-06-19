@@ -32,6 +32,9 @@ type CoinbaseWorker struct {
 	apiKeyID   string // CDP API Key ID (kid: organizations/.../apiKeys/<kid>)
 	apiKeyPEM  string // CDP API Key EC Private Key (PEM)
 	httpClient *http.Client
+
+	productInfoCache map[string]*CoinbaseProductInfo
+	productInfoMu    sync.RWMutex
 }
 
 // Advanced Trade (brokerage) 주문 요청/응답 구조체
@@ -68,6 +71,14 @@ type createOrderResponse struct {
 	ErrorResponse   map[string]any      `json:"error_response,omitempty"`
 }
 
+// CoinbaseProductInfo — 심볼 정밀도/규칙 정보
+type CoinbaseProductInfo struct {
+	ProductID      string `json:"product_id"`
+	BaseIncrement  string `json:"base_increment"`
+	QuoteIncrement string `json:"quote_increment"`
+	BaseMinSize    string `json:"base_min_size"`
+}
+
 // NewCoinbaseWorker — Coinbase Advanced Trade 워커 생성 (CDP JWT)
 func NewCoinbaseWorker(config *WorkerConfig, storage *MemoryStorage) *CoinbaseWorker {
 	// AccessKey = kid, SecretKey = EC PRIVATE KEY (PEM)
@@ -77,12 +88,13 @@ func NewCoinbaseWorker(config *WorkerConfig, storage *MemoryStorage) *CoinbaseWo
 	storage.AddLog("info", "Coinbase Advanced Trade 워커가 성공적으로 초기화되었습니다", config.Exchange, config.Symbol)
 
 	return &CoinbaseWorker{
-		config:     config,
-		storage:    storage,
-		stopCh:     make(chan struct{}),
-		apiKeyID:   apiKeyID,
-		apiKeyPEM:  apiKeyPEM,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		config:           config,
+		storage:          storage,
+		stopCh:           make(chan struct{}),
+		apiKeyID:         apiKeyID,
+		apiKeyPEM:        apiKeyPEM,
+		httpClient:       &http.Client{Timeout: 30 * time.Second},
+		productInfoCache: make(map[string]*CoinbaseProductInfo),
 	}
 }
 
@@ -152,6 +164,22 @@ func (cbw *CoinbaseWorker) executeSellOrder(ctx context.Context) {
 	// 심볼 변환 (XRP/USDT -> XRP-USDT)
 	productID := strings.ToUpper(strings.ReplaceAll(cbw.config.Symbol, "/", "-"))
 
+	// 제품 정밀도 정보 조회 (최초 1회만 API 호출, 이후 캐시 사용)
+	productInfo, err := cbw.getProductInfo(ctx, productID)
+	if err != nil {
+		cbw.storage.AddLog("warning", fmt.Sprintf("Coinbase 상품 정밀도 조회 실패, 기본 정밀도로 진행합니다: %v", err), cbw.config.Exchange, cbw.config.Symbol)
+	}
+
+	// 수량은 정수만, 가격은 원래 정밀도 사용
+	pricePrecision := 8
+	if productInfo != nil && productInfo.QuoteIncrement != "" {
+		if p := countDecimalPlaces(productInfo.QuoteIncrement); p > 0 {
+			pricePrecision = p
+		}
+	}
+	formattedBaseSize := truncateToPrecision(cbw.config.SellAmount, 0)
+	formattedPrice := truncateToPrecision(cbw.config.SellPrice, pricePrecision)
+
 	// 매도 주문 생성 (limit GTC)
 	order := createOrderRequest{
 		ClientOrderID: fmt.Sprintf("cdp-%d", time.Now().UnixNano()),
@@ -159,8 +187,8 @@ func (cbw *CoinbaseWorker) executeSellOrder(ctx context.Context) {
 		Side:          "SELL",
 		OrderConfiguration: orderConfiguration{
 			LimitLimitGTC: &limitGTCConfig{
-				BaseSize:   fmt.Sprintf("%.8f", cbw.config.SellAmount),
-				LimitPrice: fmt.Sprintf("%.8f", cbw.config.SellPrice),
+				BaseSize:   formattedBaseSize,
+				LimitPrice: formattedPrice,
 				PostOnly:   false,
 			},
 		},
@@ -175,15 +203,15 @@ func (cbw *CoinbaseWorker) executeSellOrder(ctx context.Context) {
 
 	if orderResp != nil {
 		if orderResp.Success && orderResp.SuccessResponse != nil {
-			cbw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.8f, 심볼: %s 매도 주문에 성공했습니다.",
-				cbw.GetPlatformName(), cbw.config.SellAmount, cbw.config.SellPrice, cbw.config.Symbol), cbw.config.Exchange, cbw.config.Symbol)
+			cbw.storage.AddLog("success", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 성공했습니다.",
+				cbw.GetPlatformName(), formattedBaseSize, formattedPrice, cbw.config.Symbol), cbw.config.Exchange, cbw.config.Symbol)
 		} else {
 			errorMsg := "알 수 없는 오류"
 			if orderResp.ErrorResponse != nil {
 				errorMsg = fmt.Sprintf("%+v", orderResp.ErrorResponse)
 			}
-			cbw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %.8f, 가격: %.8f, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %s",
-				cbw.GetPlatformName(), cbw.config.SellAmount, cbw.config.SellPrice, cbw.config.Symbol, errorMsg), cbw.config.Exchange, cbw.config.Symbol)
+			cbw.storage.AddLog("error", fmt.Sprintf("%s, 매도수량: %s, 가격: %s, 심볼: %s 매도 주문에 실패했습니다. 거래소 응답 메세지: %s",
+				cbw.GetPlatformName(), formattedBaseSize, formattedPrice, cbw.config.Symbol, errorMsg), cbw.config.Exchange, cbw.config.Symbol)
 		}
 	}
 }
@@ -336,4 +364,56 @@ func (cbw *CoinbaseWorker) createOrderJWT(ctx context.Context, order createOrder
 // GetPlatformName — 플랫폼명 반환
 func (cbw *CoinbaseWorker) GetPlatformName() string {
 	return "Coinbase Advanced Trade"
+}
+
+// getProductInfo — Coinbase Advanced Trade 상품 정밀도 정보 조회 및 캐시
+func (cbw *CoinbaseWorker) getProductInfo(ctx context.Context, productID string) (*CoinbaseProductInfo, error) {
+	// 캐시 확인
+	cbw.productInfoMu.RLock()
+	if info, ok := cbw.productInfoCache[productID]; ok {
+		cbw.productInfoMu.RUnlock()
+		return info, nil
+	}
+	cbw.productInfoMu.RUnlock()
+
+	// 제품 목록 조회
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.coinbase.com/api/v3/brokerage/products", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := cbw.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var parsed struct {
+		Products []CoinbaseProductInfo `json:"products"`
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("Coinbase 상품 정보 JSON 파싱 실패: %v", err)
+	}
+
+	for _, p := range parsed.Products {
+		// 캐시에 일괄 저장
+		pCopy := p
+		cbw.productInfoMu.Lock()
+		cbw.productInfoCache[p.ProductID] = &pCopy
+		cbw.productInfoMu.Unlock()
+	}
+
+	// 요청한 productID 찾기
+	cbw.productInfoMu.RLock()
+	info, ok := cbw.productInfoCache[productID]
+	cbw.productInfoMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("Coinbase 상품 정보를 찾을 수 없습니다: %s", productID)
+	}
+	return info, nil
 }

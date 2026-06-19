@@ -24,15 +24,31 @@ type GateWorker struct {
 	running            bool
 	stopCh             chan struct{}
 	lastSuccessOrderID string
+	symbolInfoCache    map[string]*GateSymbolInfo
+	symbolInfoMu       sync.RWMutex
+}
+
+// GateSymbolInfo Gate.io 심볼 정밀도/규칙 정보
+type GateSymbolInfo struct {
+	CurrencyPair    string `json:"currency_pair"`
+	AmountPrecision int    `json:"amount_precision,omitempty"` // 수량 소수 자릿수
+	Precision       int    `json:"precision,omitempty"`        // 가격 소수 자릿수
+
+	MinBaseAmount  string `json:"min_base_amount,omitempty"`
+	MinQuoteAmount string `json:"min_quote_amount,omitempty"`
+
+	PricePrecision  int // 우리가 계산해 쓰는 가격 정밀도
+	AmountPrecision2 int // 우리가 계산해 쓰는 수량 정밀도
 }
 
 // NewGateWorker 새로운 Gate.io 워커를 생성합니다
 func NewGateWorker(config *WorkerConfig, storage *MemoryStorage) *GateWorker {
 	return &GateWorker{
-		config:  config,
-		storage: storage,
-		running: false,
-		stopCh:  make(chan struct{}),
+		config:          config,
+		storage:         storage,
+		running:         false,
+		stopCh:          make(chan struct{}),
+		symbolInfoCache: make(map[string]*GateSymbolInfo),
 	}
 }
 
@@ -125,32 +141,51 @@ func (gw *GateWorker) executeSellOrder() {
 	}
 
 	// APIv4 직접 구현으로 매도 주문 실행
-	result := gw.executeGateAPISellOrder()
+	result := gw.executeGateAPISellOrder(currencyPair)
 
 	if result.Success {
 		gw.storage.AddLog("success", fmt.Sprintf("Gate.io APIv4 매도 주문 성공: 주문번호=%s, 가격=%.8f, 수량=%.8f, 통화쌍=%s",
-			result.OrderID, gw.config.SellPrice, gw.config.SellAmount, currencyPair), gw.config.Exchange, gw.config.Symbol)
+			result.OrderID, result.Price, result.Amount, currencyPair), gw.config.Exchange, gw.config.Symbol)
 	} else {
 		gw.storage.AddLog("error", fmt.Sprintf("Gate.io APIv4 매도 주문 실패: %s", result.ErrorMessage), gw.config.Exchange, gw.config.Symbol)
 	}
 }
 
 // executeGateAPISellOrder Gate.io APIv4 직접 호출로 매도 주문 실행
-func (gw *GateWorker) executeGateAPISellOrder() OrderResult {
+func (gw *GateWorker) executeGateAPISellOrder(currencyPair string) OrderResult {
 	apiURL := "https://api.gateio.ws/api/v4/spot/orders"
 
 	// Unix timestamp in seconds
 	timestamp := time.Now().Unix()
 
-	// 심볼을 Gate.io 형식으로 변환
-	currencyPair := strings.ReplaceAll(gw.config.Symbol, "/", "_")
+	// 심볼을 Gate.io 형식으로 변환 (이미 변환된 값이 들어오지만 안전하게 한 번 더 처리)
+	if currencyPair == "" {
+		currencyPair = strings.ReplaceAll(gw.config.Symbol, "/", "_")
+	}
+
+	// 심볼 정밀도 정보 조회 (최초 1회만 API 호출, 이후 캐시 사용)
+	symbolInfo, err := gw.getGateSymbolInfo(currencyPair)
+	if err != nil {
+		gw.storage.AddLog("warning", fmt.Sprintf("Gate.io 심볼 정밀도 조회 실패, 기본 정밀도로 진행합니다: %v", err), gw.config.Exchange, gw.config.Symbol)
+	}
+
+	// 수량은 정수만, 가격은 원래 정밀도 사용
+	pricePrecision := 8
+	if symbolInfo != nil && symbolInfo.PricePrecision > 0 {
+		pricePrecision = symbolInfo.PricePrecision
+	}
+	formattedAmountStr := truncateToPrecision(gw.config.SellAmount, 0)
+	formattedPriceStr := truncateToPrecision(gw.config.SellPrice, pricePrecision)
+
+	formattedAmount, _ := strconv.ParseFloat(formattedAmountStr, 64)
+	formattedPrice, _ := strconv.ParseFloat(formattedPriceStr, 64)
 
 	requestBody := map[string]interface{}{
 		"currency_pair": currencyPair,
 		"side":          "sell",
 		"type":          "limit",
-		"amount":        fmt.Sprintf("%.8f", gw.config.SellAmount),
-		"price":         fmt.Sprintf("%.8f", gw.config.SellPrice),
+		"amount":        formattedAmountStr,
+		"price":         formattedPriceStr,
 		"text":          fmt.Sprintf("t-bitbitbot_%d", time.Now().Unix()), // 사용자 정의 정보
 	}
 
@@ -216,9 +251,9 @@ func (gw *GateWorker) executeGateAPISellOrder() OrderResult {
 		return OrderResult{
 			Success:      true,
 			OrderID:      orderID,
-			Price:        gw.config.SellPrice,
-			Amount:       gw.config.SellAmount,
-			TotalAmount:  gw.config.SellAmount * gw.config.SellPrice,
+			Price:        formattedPrice,
+			Amount:       formattedAmount,
+			TotalAmount:  formattedAmount * formattedPrice,
 			ErrorMessage: "",
 		}
 	} else {
@@ -233,9 +268,9 @@ func (gw *GateWorker) executeGateAPISellOrder() OrderResult {
 		return OrderResult{
 			Success:      false,
 			OrderID:      "",
-			Price:        0,
-			Amount:       0,
-			TotalAmount:  0,
+			Price:        formattedPrice,
+			Amount:       formattedAmount,
+			TotalAmount:  formattedAmount * formattedPrice,
 			ErrorMessage: fmt.Sprintf("Gate.io API 오류 (상태코드: %d): %s", resp.StatusCode, errorMsg),
 		}
 	}
@@ -251,4 +286,84 @@ func (gw *GateWorker) generateGateSignature(message, secretKey string) string {
 // GetPlatformName 플랫폼 이름을 반환합니다
 func (gw *GateWorker) GetPlatformName() string {
 	return "Gate.io"
+}
+
+// getGateSymbolInfo Gate.io 심볼 정밀도 정보를 조회하고 캐시합니다.
+func (gw *GateWorker) getGateSymbolInfo(currencyPair string) (*GateSymbolInfo, error) {
+	// 캐시 확인
+	gw.symbolInfoMu.RLock()
+	if info, ok := gw.symbolInfoCache[currencyPair]; ok {
+		gw.symbolInfoMu.RUnlock()
+		return info, nil
+	}
+	gw.symbolInfoMu.RUnlock()
+
+	type gatePairRaw struct {
+		CurrencyPair    string `json:"currency_pair"`
+		AmountPrecision int    `json:"amount_precision,omitempty"`
+		Precision       int    `json:"precision,omitempty"`
+
+		MinBaseAmount  string `json:"min_base_amount,omitempty"`
+		MinQuoteAmount string `json:"min_quote_amount,omitempty"`
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", "https://api.gateio.ws/api/v4/spot/currency_pairs", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var pairs []gatePairRaw
+	if err := json.NewDecoder(resp.Body).Decode(&pairs); err != nil {
+		return nil, err
+	}
+
+	for _, p := range pairs {
+		if strings.EqualFold(p.CurrencyPair, currencyPair) {
+			info := &GateSymbolInfo{
+				CurrencyPair:    p.CurrencyPair,
+				AmountPrecision: p.AmountPrecision,
+				Precision:       p.Precision,
+				MinBaseAmount:   p.MinBaseAmount,
+				MinQuoteAmount:  p.MinQuoteAmount,
+			}
+
+			// 가격 정밀도 계산
+			if info.Precision > 0 {
+				info.PricePrecision = info.Precision
+			} else if info.MinQuoteAmount != "" {
+				info.PricePrecision = countDecimalPlaces(info.MinQuoteAmount)
+			}
+
+			// 수량 정밀도 계산
+			if info.AmountPrecision > 0 {
+				info.AmountPrecision2 = info.AmountPrecision
+			} else if info.MinBaseAmount != "" {
+				info.AmountPrecision2 = countDecimalPlaces(info.MinBaseAmount)
+			}
+
+			// 기본값 보정
+			if info.PricePrecision <= 0 {
+				info.PricePrecision = 8
+			}
+			if info.AmountPrecision2 <= 0 {
+				info.AmountPrecision2 = 8
+			}
+
+			// 캐시에 저장
+			gw.symbolInfoMu.Lock()
+			gw.symbolInfoCache[currencyPair] = info
+			gw.symbolInfoMu.Unlock()
+
+			return info, nil
+		}
+	}
+
+	return nil, fmt.Errorf("Gate.io 심볼 정보를 찾을 수 없습니다: %s", currencyPair)
 }

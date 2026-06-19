@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -37,6 +39,22 @@ func initConfigSettings() error {
 	return nil
 }
 
+// remoteConfigEnabled 환경 변수 BITBIT_ENABLE_REMOTE_CONFIG=1|true|yes 일 때만 S3(configUrl)로 설정을 가져옵니다. 기본은 요청하지 않습니다.
+func remoteConfigEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("BITBIT_ENABLE_REMOTE_CONFIG")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+// applyLocalOnlyConfig 원격 미사용 시 기본 설정(실행 허용, 강제/권장 업데이트 없음).
+func applyLocalOnlyConfig() {
+	config = &Config{
+		Running: "all",
+		MainVer: Version,
+		MinVer:  Version,
+	}
+	log.Printf("원격 설정 미사용(기본): S3 요청 없이 로컬 기본 설정 사용. 원격 켜기: BITBIT_ENABLE_REMOTE_CONFIG=1")
+}
+
 // loadConfigFromS3 S3에서 설정 파일을 읽어옵니다
 func loadConfigFromS3() error {
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -62,6 +80,10 @@ func loadConfigFromS3() error {
 
 // CheckVersionUpdate 버전 업데이트를 확인합니다
 func CheckVersionUpdate() error {
+	if !remoteConfigEnabled() {
+		applyLocalOnlyConfig()
+		return nil
+	}
 	if err := loadConfigFromS3(); err != nil {
 		return err
 	}

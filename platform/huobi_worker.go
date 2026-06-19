@@ -149,14 +149,17 @@ func (hw *HuobiWorker) executeSellOrder() {
 	// 심볼 정보 조회
 	symbolInfo, err := hw.getSymbolInfo(hw.config.Symbol)
 	if err != nil {
-		hw.storage.AddLog("error", fmt.Sprintf("심볼 정보 조회 실패: %v", err), hw.config.Exchange, hw.config.Symbol)
-		// 심볼 정보를 가져오지 못해도 기본값으로 진행
+		hw.storage.AddLog("warning", fmt.Sprintf("심볼 정보 조회 실패, 기본 정밀도로 진행합니다: %v", err), hw.config.Exchange, hw.config.Symbol)
 		symbolInfo = nil
 	}
 
-	// 가격과 수량 포맷팅 (심볼 정보 기반)
-	formattedPrice := hw.formatPrice(hw.config.SellPrice, symbolInfo)
-	formattedAmount := hw.formatAmount(hw.config.SellAmount, symbolInfo)
+	// 수량은 정수만, 가격은 원래 정밀도 사용
+	pricePrecision := 8
+	if symbolInfo != nil && symbolInfo.PricePrecision > 0 {
+		pricePrecision = symbolInfo.PricePrecision
+	}
+	formattedAmount := truncateToPrecision(hw.config.SellAmount, 0)
+	formattedPrice := truncateToPrecision(hw.config.SellPrice, pricePrecision)
 
 	// 주문 요청 본문 생성
 	orderBody := map[string]interface{}{
